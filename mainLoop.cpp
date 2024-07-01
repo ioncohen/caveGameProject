@@ -1,7 +1,6 @@
 #include <SDL.h>
 #include <stdio.h>
 #include "SimplexNoise.h"
-
 #include <ctime>
 #include <cstdlib>
 
@@ -9,13 +8,16 @@
 //		fix input direction
 //		spiral lighting function
 //		Do some subpixel stuff to mke slow movement smoother. Not sure how, either draw everything with sprites and floats (but store the same) or maybe store higher resolution terrain, and do smaller steps while displaying or something.
-//		have the properties of the cave change with depth. then at the top have it spit out into just the ocean.
+//			or both
+//		
+// 
+// have the properties of the cave change with depth. then at the top have it spit out into just the ocean.
 //		Cave miner? add ore pockets to collect and/or enemies/monsters to fight/chase you somehow (by following your trails?)
 //		maybe different biomes where we blend two noise functions together?
-//
+//		
 
-const int SCREEN_WIDTH = 1000;
-const int SCREEN_HEIGHT = 1000;
+const int SCREEN_WIDTH = 1010;
+const int SCREEN_HEIGHT = 1010;
 
 const int GAME_WIDTH = 333;
 const int GAME_HEIGHT = 333;
@@ -31,7 +33,7 @@ SDL_Window* window = NULL;
 SDL_Surface* windowSurface = NULL;
 
 //Game constants
-bool caveTerrain[GAME_WIDTH][GAME_HEIGHT];
+bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
 float playerX = 0;
 float playerY = 0;
 float xSpeed = 0;       
@@ -42,6 +44,12 @@ float yAccel = 0;
 float noiseScaleFactor = 50;
 float noiseCutoffLevel = 0;
 
+
+int bufferOffsetX = 0;
+int bufferOffsetY = 0;
+
+int subPixelOffsetX = 0;
+int subPixelOffsetY = 0;
 
 //mod method that works better with negative numbers
 int ringMod(int a, int b) {
@@ -65,8 +73,8 @@ int pixelSize = 3;
 int pixThick = 1;
 
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
-	x *= pixelSize;
-	y *= pixelSize;
+	x = x*pixelSize - subPixelOffsetX;
+	y = y*pixelSize - subPixelOffsetY;
 
 	SDL_Rect block;
 
@@ -83,8 +91,8 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha) {
 	
 	//outer pixels (add a +1 for a thing)
-	x = (pixelSize) * x;
-	y = (pixelSize) * y;
+	x = (pixelSize) * x + subPixelOffsetX;
+	y = (pixelSize) * y + subPixelOffsetY;
 
 
 	for (int i = 0; i < pixelSize; i++) {
@@ -124,11 +132,14 @@ bool xOOB(int x) {
 }
 
 float pixDistLookupTable[2 * GAME_WIDTH][2 * GAME_HEIGHT];
-int pixTraceBackDirX[2 * GAME_WIDTH][2 * GAME_HEIGHT];
-int pixTraceBackDirY[2 * GAME_WIDTH][2 * GAME_HEIGHT];
 
-int pixTraceBackDirX2[2 * GAME_WIDTH][2 * GAME_HEIGHT];
-int pixTraceBackDirY2[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+int occluded[GAME_WIDTH][GAME_HEIGHT] = { {} };
+
+int pixTraceBackDirX[2 * GAME_WIDTH][2 * GAME_HEIGHT] = { {} };
+int pixTraceBackDirY[2 * GAME_WIDTH][2 * GAME_HEIGHT] = { {} };
+
+int pixTraceBackDirX2[2 * GAME_WIDTH][2 * GAME_HEIGHT] = { {} };
+int pixTraceBackDirY2[2 * GAME_WIDTH][2 * GAME_HEIGHT] = { {} };
 
 //function to fill a lookup table of distances for pixels of certain distances from each other
 //useful for fast lighting loops
@@ -139,7 +150,7 @@ void fillLookupTables() {
 		for (int j = 0; j < GAME_HEIGHT << 1; j++) {
 			int xdist = GAME_WIDTH - i;
 			int ydist = GAME_HEIGHT - j;
-			pixDistLookupTable[i][j] = sqrt(xdist ^ 2 + ydist ^ 2);
+			pixDistLookupTable[i][j] = sqrt(xdist*xdist + ydist*ydist);
 			
 			if (i != GAME_WIDTH || j != GAME_HEIGHT) {
 				float angleToCenter = atan2f(ydist, xdist) * 180 / 3.1415;
@@ -198,6 +209,7 @@ float rises[25] = { 0, 1, 1, 1, 2, 4, 1,  4,  2,  1,  1,  1,  0, -1, -1, -1, -2,
 float runs[25] = { 1, 4, 2, 1, 1, 1, 0, -1, -1, -1, -2, -4, -1, -4, -2, -1, -1, -1,  0, 1,   1,  1,  2,  4, 1 };
 float snapAngles[25];
 
+//TODO: test if theres overshooting for pixels near the center. might have to edit those. not a big deal though i think.
 void fillTraceBackTable() {
 	printf("STARTING FILLTRACEBACKTABLE");
 	for (int i = 0; i < 25; i++) {
@@ -239,15 +251,66 @@ void fillTraceBackTable() {
 	printf("FINISHING TRACEBACKFILL");
 }
 
-int spiralOffset = 0;
+int clamp(int value) {
+	return value * (value >= 0);
+}
+
+//all inputs are locations in the game grid. need to be translated wrt center
+void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
+	
+	/*DEBUG
+	if (caveTerrain[ringMod(x + bufferOffsetX, GAME_WIDTH)][ringMod(y + bufferOffsetY, GAME_HEIGHT)]) {
+		setBigPixel (x, y, 255, 255, 255);
+	}
+	return;
+	//setBigPixel(x, y, pixDistLookupTable[x][y], pixDistLookupTable[x][y], pixDistLookupTable[x][y]);
+	//return;
+	//printf("x,y = (%d,%d)\n", x, y);
+	*/
+	
+	int look1X = pixTraceBackDirX[x - spiralCenterX + GAME_WIDTH][y - spiralCenterY + GAME_HEIGHT];
+	int look1Y = pixTraceBackDirY[x - spiralCenterX + GAME_WIDTH][y - spiralCenterY + GAME_HEIGHT];
+	
+	//printf("lookDirs = (%d,%d)\n", look1X, look1Y);
+	if (occluded[x + look1X][y + look1Y]) {
+		occluded[x][y] = 1;
+		setBigPixel(x, y, 0, 0, 0); //is this necessary?
+	}
+	else {
+		//now check secondary lookback? add later
+		if (!caveTerrain[ringMod(x + bufferOffsetX, GAME_WIDTH)][ringMod(y + bufferOffsetY, GAME_HEIGHT)]) {
+			occluded[x][y] = 1;
+			int smallLookX = pixTraceBackDirX2[x - spiralCenterX + GAME_WIDTH][y - spiralCenterY + GAME_HEIGHT];
+			int smallLookY = pixTraceBackDirX2[x - spiralCenterX + GAME_WIDTH][y - spiralCenterY + GAME_HEIGHT];
+			if (!caveTerrain[ringMod(x + smallLookX + bufferOffsetX, GAME_WIDTH)][ringMod(y + bufferOffsetY + smallLookY, GAME_HEIGHT)]) {
+				setBigPixel(x, y, 0, 0, 0);	
+			}
+			else {
+				setBigPixel(x, y, 255, 255, 255);
+			}
+			}
+		else {
+			occluded[x][y] = 0;
+			int  dist = (int)pixDistLookupTable[x - spiralCenterX + GAME_WIDTH][y - spiralCenterY + GAME_HEIGHT];
+			//printf("(%d,%d)\n", x,y);
+			//printf("(%d)\n",dist);
+			setBigPixel(x, y, clamp(255 - 3*dist), clamp(255 - 3 * dist), clamp(255 - 3 * dist));
+		}
+	}
+}
 
 void handleLighting(int lightSourceX, int lightSourceY) {
 	//*******idea, do more checking in outer loop so no checking necessary in inner loop.
 	//calculate beforehand where the inbounds portion of the loop will start and end.
 	//Then the inner loop is just a for loop with fixed endpoints, no checking.
-	
+
 	//we have to spiral around, and we have to deal with a non-square screen
 	//sequence we want: [(0,0),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1),(2,-1),(,),(,),(,),(,),(,),(,)]
+
+	for (int i = 0; i < GAME_WIDTH; i++)
+		for (int j = 0; j < GAME_HEIGHT; j++)
+			occluded[lightSourceX + i][lightSourceY + j] = 0;
+	
 	int x = lightSourceX;
 	int y = lightSourceY;
 	bool movingX = 1;
@@ -296,6 +359,7 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 				//setBigPixel(x, y, legLength % 255, legLength % 255, legLength % 255, 255);
 				//determine occlusion
 				//find previous
+				handlePixelInSpiral(x, y, lightSourceX, lightSourceY);
 
 
 				numDisplayed++;
@@ -312,7 +376,9 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 					continue;
 				}
 				//printf("(%d,%d)", x, y);
-				setBigPixel(x, y, (legLength/2 + ((numDisplayed+spiralOffset) % 255) / 10) % 255, (legLength / 2 + ((numDisplayed+ spiralOffset) % 255) / 10) % 255, (legLength / 2 + (numDisplayed % 255) / 10) % 255, 255);
+				handlePixelInSpiral(x,y, lightSourceX, lightSourceY);
+
+				//setBigPixel(x, y, (legLength/2 + ((numDisplayed) % 255) / 10) % 255, (legLength / 2 + ((numDisplayed) % 255) / 10) % 255, (legLength / 2 + (numDisplayed % 255) / 10) % 255, 255);
 				numDisplayed++;
 
 				y += signOfMove;
@@ -330,6 +396,10 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 	}
 	//printf("finishedDisplaying the spiral :)!!!!");
 }
+
+//it might be time to split into multiple files
+//TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
+
 
 int main(int argc, char* args[]) {
 	
@@ -364,9 +434,6 @@ int main(int argc, char* args[]) {
 			caveTerrain[i][j] = SimplexNoise::noise(i / noiseScaleFactor, j / noiseScaleFactor) > noiseCutoffLevel;
 		}
 	}
-
-	int bufferOffsetX = 0;
-	int bufferOffsetY = 0;
 
 	int prevBufferOffsetX = 0;
 	int prevBufferOffsetY = 0;
@@ -486,8 +553,8 @@ int main(int argc, char* args[]) {
 			ySpeed = 0.9;
 		*/
 
-		int prevX = (int)playerX;
-		int prevY = (int)playerY;
+		int prevX = floor(playerX);
+		int prevY = floor(playerY);
 
 		playerX += xSpeed;
 		playerY += ySpeed;
@@ -500,15 +567,15 @@ int main(int argc, char* args[]) {
 
 		//calculate new bufferOffset from player position
 		//we use unsigned int to get the ring buffer modulus behavior, hopefully.
-		bufferOffsetX = ringMod((int)playerX,GAME_WIDTH);
-		bufferOffsetY = ringMod((int)playerY,GAME_HEIGHT);
+		bufferOffsetX = ringMod(floor(playerX),GAME_WIDTH);
+		bufferOffsetY = ringMod(floor(playerY),GAME_HEIGHT);
 
 		//ok now need buffer fill direction.
 		int bufferDirectionX = (xSpeed >= 0) - (xSpeed < 0);
 		int bufferDirectionY = (ySpeed >= 0) - (ySpeed < 0);
 		
-		int numNewLinesX = abs((int)playerX - prevX);
-		int numNewLinesY = abs((int)playerY - prevY);
+		int numNewLinesX = abs(floor(playerX) - prevX);
+		int numNewLinesY = abs(floor(playerY) - prevY);
 
 		//idea. Imaginary loop start. imagine we are filling in the whole array. wewould loop i and j from 0 to height, and then put the offset in the left and the x pos in the right!
 		//ok now just start the loop at the lines we need to fill?
@@ -547,24 +614,20 @@ int main(int argc, char* args[]) {
 		//clear the screen so we can draw to it later
 		SDL_FillRect(windowSurface, NULL, 0x000000);
 
-		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
+		//calculate subpixel offset for frame drawing purposes
+		float subPixelDiffX = playerX - floor(playerX);
+		float subPixelDiffY = playerY - floor(playerY);
 		
-		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
+		subPixelOffsetX = round(subPixelDiffX * 2);
+		subPixelOffsetY = round(subPixelDiffY * 2);
+
+		printf("offsets: %d | %d \n", subPixelOffsetX, subPixelOffsetY);
+
+		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
+		handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
 		
 		//test of spiral raycaster
-		for (int i = 0; i < 40; i++) {
-			int startX = rand() % 333;
-			int startY = rand() % 333;
-
-			int endyX = GAME_WIDTH / 2;
-			int endyY = GAME_HEIGHT / 2;
-
-			while (startX != endyX || endyY != startY) {
-				setBigPixel(startX, startY, 255, 255, 255);
-				startX += pixTraceBackDirX[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
-				startY += pixTraceBackDirY[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
-			}
-		}
+		//draw50Lines
 		
 		/*
 		for (int i = 0; i < GAME_WIDTH; i++) {
@@ -584,7 +647,7 @@ int main(int argc, char* args[]) {
 
 		//update the surface, because we have made all the necessary changes
 		SDL_UpdateWindowSurface(window);
-		
+		//printf("frame done");
 	}
 
 	//free up everything and quit
@@ -597,6 +660,23 @@ int main(int argc, char* args[]) {
 
 	return 0;
 }
+
+void draw50Lines(){
+	for (int i = 0; i < 40; i++) {
+		int startX = rand() % 333;
+		int startY = rand() % 333;
+
+		int endyX = GAME_WIDTH / 2;
+		int endyY = GAME_HEIGHT / 2;
+
+		while (startX != endyX || endyY != startY) {
+			setBigPixel(startX, startY, 255, 255, 255);
+			startX += pixTraceBackDirX[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
+			startY += pixTraceBackDirY[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
+		}
+	}
+}
+
 
 //heres the plan:
 //	in main loop, we check for button pushes, adjust speed of movement
