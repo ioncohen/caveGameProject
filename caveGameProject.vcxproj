@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="mainLoop.cpp" />
     <ClCompile Include="SimplexNoise.cpp" />
+    <ClCompile Include="testingFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="SimplexNoise.h" />

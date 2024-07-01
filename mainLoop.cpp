@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include "SimplexNoise.h"
 
+#include <ctime>
+#include <cstdlib>
+
 //THINGS TODO:
 //		fix input direction
 //		spiral lighting function
@@ -120,6 +123,124 @@ bool xOOB(int x) {
 	return x < 0 || x >= GAME_WIDTH;
 }
 
+float pixDistLookupTable[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+int pixTraceBackDirX[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+int pixTraceBackDirY[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+
+int pixTraceBackDirX2[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+int pixTraceBackDirY2[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+
+//function to fill a lookup table of distances for pixels of certain distances from each other
+//useful for fast lighting loops
+void fillLookupTables() {
+	//Should we fill in with dist from point to center, or the other way around? bro its the same smh
+	//the center of the array is GAME_WIDTH, GAME_HEIGHT I believe. all values are calced based on that.
+	for (int i = 0; i < GAME_WIDTH << 1; i++) {
+		for (int j = 0; j < GAME_HEIGHT << 1; j++) {
+			int xdist = GAME_WIDTH - i;
+			int ydist = GAME_HEIGHT - j;
+			pixDistLookupTable[i][j] = sqrt(xdist ^ 2 + ydist ^ 2);
+			
+			if (i != GAME_WIDTH || j != GAME_HEIGHT) {
+				float angleToCenter = atan2f(ydist, xdist) * 180 / 3.1415;
+				if (angleToCenter < 0) { angleToCenter += 360; }
+				int snapAngle = round(angleToCenter / (float)45) * 45;
+				switch (snapAngle) {
+				case 0:
+					pixTraceBackDirX2[i][j] = 1;
+					pixTraceBackDirY2[i][j] = 0;
+					break;
+				case 45:
+					pixTraceBackDirX2[i][j] = 1;
+					pixTraceBackDirY2[i][j] = 1;
+					break;
+				case 90:
+					pixTraceBackDirX2[i][j] = 0;
+					pixTraceBackDirY2[i][j] = 1;
+					break;
+				case 135:
+					pixTraceBackDirX2[i][j] = -1;
+					pixTraceBackDirY2[i][j] = 1;
+					break;
+				case 180:
+					pixTraceBackDirX2[i][j] = -1;
+					pixTraceBackDirY2[i][j] = 0;
+					break;
+				case 225:
+					pixTraceBackDirX2[i][j] = -1;
+					pixTraceBackDirY2[i][j] = -1;
+					break;
+				case 270:
+					pixTraceBackDirX2[i][j] = 0;
+					pixTraceBackDirY2[i][j] = -1;
+					break;
+				case 315:
+					pixTraceBackDirX2[i][j] = 1;
+					pixTraceBackDirY2[i][j] = -1;
+					break;
+				case 360:
+					pixTraceBackDirX2[i][j] = 1;
+					pixTraceBackDirY2[i][j] = 0;
+					break;
+				default:
+					printf("ERROR:ANGLE ROUNDING");
+				}
+			}
+			else {
+				pixTraceBackDirX2[i][j] = 0;
+				pixTraceBackDirY2[i][j] = 0;
+			}
+		}
+	}
+}
+
+float rises[25] = { 0, 1, 1, 1, 2, 4, 1,  4,  2,  1,  1,  1,  0, -1, -1, -1, -2, -4, -1, -4, -2, -1 ,-1 ,-1, 0 };
+float runs[25] = { 1, 4, 2, 1, 1, 1, 0, -1, -1, -1, -2, -4, -1, -4, -2, -1, -1, -1,  0, 1,   1,  1,  2,  4, 1 };
+float snapAngles[25];
+
+void fillTraceBackTable() {
+	printf("STARTING FILLTRACEBACKTABLE");
+	for (int i = 0; i < 25; i++) {
+		snapAngles[i] = atan2f(rises[i], runs[i]) * 180 / 3.14159;
+		if (snapAngles[i] < 0 && snapAngles[i] > -2) { snapAngles[i] = 0; }
+		if (snapAngles[i] < 0) { snapAngles[i] += 360; }
+	}
+	snapAngles[24] = 360;
+	for (int i = 0; i < GAME_WIDTH << 1; i++) {
+		for (int j = 0; j < GAME_HEIGHT << 1; j++) {
+			int xdist = GAME_WIDTH - i;
+			int ydist = GAME_HEIGHT - j;
+
+			if (i != GAME_WIDTH || j != GAME_HEIGHT) {
+				float angleToCenter = atan2f(ydist, xdist) * 180 / 3.14159;
+				if (angleToCenter < 0) { angleToCenter += 360; }
+				float closestAngle = 0;
+				int closestAngleIndex = 0;
+				float closestDistance = 365;
+			
+				for (int k = 0; k < 24; k++) {
+					if (abs(snapAngles[k] - angleToCenter) < closestDistance) {
+						closestAngle = snapAngles[k];
+						closestAngleIndex = k;
+						closestDistance = abs(snapAngles[k] - angleToCenter);
+					}
+				}
+				
+				pixTraceBackDirX[i][j] = runs[closestAngleIndex];
+				pixTraceBackDirY[i][j] = rises[closestAngleIndex];
+				
+			}
+			else {
+				pixTraceBackDirX[i][j] = 0;
+				pixTraceBackDirY[i][j] = 0;
+			}
+		}
+	}
+	printf("FINISHING TRACEBACKFILL");
+}
+
+int spiralOffset = 0;
+
 void handleLighting(int lightSourceX, int lightSourceY) {
 	//*******idea, do more checking in outer loop so no checking necessary in inner loop.
 	//calculate beforehand where the inbounds portion of the loop will start and end.
@@ -172,8 +293,11 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 					continue;
 				}
 				//printf("(%d,%d)", x, y);
-				setBigPixel(x, y, legLength % 255, legLength % 255, legLength % 255);
-				
+				//setBigPixel(x, y, legLength % 255, legLength % 255, legLength % 255, 255);
+				//determine occlusion
+				//find previous
+
+
 				numDisplayed++;
 				x += signOfMove;
 				movesToGo--;
@@ -188,7 +312,7 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 					continue;
 				}
 				//printf("(%d,%d)", x, y);
-				setBigPixel(x, y, (legLength/2 + (numDisplayed%255)/10)%255, (legLength / 2 + (numDisplayed % 255) / 10) % 255, (legLength / 2 + (numDisplayed % 255) / 10) % 255);
+				setBigPixel(x, y, (legLength/2 + ((numDisplayed+spiralOffset) % 255) / 10) % 255, (legLength / 2 + ((numDisplayed+ spiralOffset) % 255) / 10) % 255, (legLength / 2 + (numDisplayed % 255) / 10) % 255, 255);
 				numDisplayed++;
 
 				y += signOfMove;
@@ -208,9 +332,12 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 }
 
 int main(int argc, char* args[]) {
+	
 	//first, we initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
 	
+	srand(time(0));
+
 	//create window
 	window = SDL_CreateWindow("Cave Game Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
 	
@@ -220,6 +347,10 @@ int main(int argc, char* args[]) {
 	//ok now we can start our main loop:
 	bool quit = false;
 	SDL_Event event;
+
+	//fill pixelDistance lookup table
+	fillLookupTables();
+	fillTraceBackTable();
 
 	//bools to keep track of where/if we are accelerating
 	bool pushingLeft = false;
@@ -418,10 +549,22 @@ int main(int argc, char* args[]) {
 
 		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
 		
-	
-
-		handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
+		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
 		
+		//test of spiral raycaster
+		for (int i = 0; i < 40; i++) {
+			int startX = rand() % 333;
+			int startY = rand() % 333;
+
+			int endyX = GAME_WIDTH / 2;
+			int endyY = GAME_HEIGHT / 2;
+
+			while (startX != endyX || endyY != startY) {
+				setBigPixel(startX, startY, 255, 255, 255);
+				startX += pixTraceBackDirX[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
+				startY += pixTraceBackDirY[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
+			}
+		}
 		
 		/*
 		for (int i = 0; i < GAME_WIDTH; i++) {
