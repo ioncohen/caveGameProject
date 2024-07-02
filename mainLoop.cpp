@@ -16,6 +16,8 @@
 //		maybe different biomes where we blend two noise functions together?
 //		
 
+SDL_Color textColor = { 255, 255, 255, 255 };
+
 const int SCREEN_WIDTH = 1010;
 const int SCREEN_HEIGHT = 1010;
 
@@ -72,18 +74,19 @@ void set_pixel(SDL_Surface* surface, int x, int y, uint8_t red, uint8_t green, u
 int pixelSize = 3;
 int pixThick = 1;
 
+SDL_Rect block;
+
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 	x = x*pixelSize - subPixelOffsetX;
 	y = y*pixelSize - subPixelOffsetY;
-
-	SDL_Rect block;
 
 	block.x = x;
 	block.y = y;
 
 	block.h = pixelSize;
 	block.w = pixelSize;
-
+	//blue version
+	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)255 << 24);
 	SDL_FillRect(windowSurface, &block, pixel);
 }
@@ -91,8 +94,8 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha) {
 	
 	//outer pixels (add a +1 for a thing)
-	x = (pixelSize) * x + subPixelOffsetX;
-	y = (pixelSize) * y + subPixelOffsetY;
+	x = (pixelSize) * x - subPixelOffsetX;
+	y = (pixelSize) * y - subPixelOffsetY;
 
 
 	for (int i = 0; i < pixelSize; i++) {
@@ -403,6 +406,8 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 
 int main(int argc, char* args[]) {
 	
+	int frameCount = 0;
+
 	//first, we initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
 	
@@ -621,8 +626,6 @@ int main(int argc, char* args[]) {
 		subPixelOffsetX = round(subPixelDiffX * 2);
 		subPixelOffsetY = round(subPixelDiffY * 2);
 
-		printf("offsets: %d | %d \n", subPixelOffsetX, subPixelOffsetY);
-
 		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
 		handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
 		
@@ -648,7 +651,9 @@ int main(int argc, char* args[]) {
 		//update the surface, because we have made all the necessary changes
 		SDL_UpdateWindowSurface(window);
 		//printf("frame done");
-	}
+		frameCount++;
+		//printf("OVR AVG FPS: %d", 1000 * frameCount / SDL_GetTicks());
+}
 
 	//free up everything and quit
 	//Destroy window
