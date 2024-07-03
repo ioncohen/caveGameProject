@@ -4,6 +4,8 @@
 #include <ctime>
 #include <cstdlib>
 
+#define PI 3.14159265
+
 //THINGS TODO:
 //		fix input direction
 //		spiral lighting function
@@ -16,23 +18,27 @@
 //		maybe different biomes where we blend two noise functions together?
 //		
 
+bool debugFlag = 0;
+
 SDL_Color textColor = { 255, 255, 255, 255 };
 
 const int SCREEN_WIDTH = 1010;
 const int SCREEN_HEIGHT = 1010;
 
-const int GAME_WIDTH = 333;
-const int GAME_HEIGHT = 333;
+const int GAME_WIDTH = 100;
+const int GAME_HEIGHT = 100;
 
 const int MAX_DIM = GAME_WIDTH - (GAME_WIDTH - GAME_HEIGHT) * (GAME_HEIGHT > GAME_WIDTH);
 
-const float ACCEL_RATE = 0.01;
+const float ACCEL_RATE = 0.001;
 
 //The window we'll be rendering to
 SDL_Window* window = NULL;
 
 //The surface contained by the window
 SDL_Surface* windowSurface = NULL;
+
+SDL_Surface* layerTwo;
 
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
@@ -71,7 +77,7 @@ void set_pixel(SDL_Surface* surface, int x, int y, uint8_t red, uint8_t green, u
 }
 
 //pixel size constant
-int pixelSize = 3;
+int pixelSize = 10;
 int pixThick = 1;
 
 SDL_Rect block;
@@ -91,34 +97,89 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 	SDL_FillRect(windowSurface, &block, pixel);
 }
 
+void setBigPixelCorner(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
+	SDL_Rect horizBlock;
+	x = x * pixelSize;
+}
+
+void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha) {
+	x = x * pixelSize;
+	y = y * pixelSize;
+
+	block.x = x;
+	block.y = y;
+
+	block.h = pixelSize;
+	block.w = pixelSize;
+	//blue version
+	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
+	SDL_FillRect(windowSurface, &block, pixel);
+}
+
+void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface* layer) {
+	x = x * pixelSize - subPixelOffsetX;
+	y = y * pixelSize - subPixelOffsetY;
+
+	block.x = x;
+	block.y = y;
+
+	block.h = pixelSize;
+	block.w = pixelSize;
+	//blue version
+	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)255 << 24);
+	SDL_FillRect(layer, &block, pixel);
+}
+
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha) {
-	
-	//outer pixels (add a +1 for a thing)
-	x = (pixelSize) * x - subPixelOffsetX;
-	y = (pixelSize) * y - subPixelOffsetY;
+	x = x * pixelSize - subPixelOffsetX;
+	y = y * pixelSize - subPixelOffsetY;
 
+	block.x = x;
+	block.y = y;
 
-	for (int i = 0; i < pixelSize; i++) {
-		for (int j = 0; j < pixelSize; j++) {
-			if ((i < pixThick || i >= pixelSize - pixThick) || (j < pixThick || j >= pixelSize - pixThick)) {
-				set_pixel(windowSurface, x + i, y + j, red, green, blue, alpha);
-			}
-			else{
-				set_pixel(windowSurface, x + i, y + j, 2*red / 3, 2*green / 3, 2*blue / 3, alpha);
-			}
-		}
+	block.h = pixelSize;
+	block.w = pixelSize;
+	//blue version
+	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
+	SDL_FillRect(windowSurface, &block, pixel);
+}
+
+void setVerticalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface* layer) {
+	if (!subPixelOffsetX) {
+		return;
 	}
-	
+	x = x * pixelSize + (pixelSize - subPixelOffsetX);
+	y = y * pixelSize;
 
-	//for (int i = 0; i < pixelSize-1; i++) {
-	//	set_pixel(windowSurface, x + i, y, red, green, blue, alpha);
-	//	set_pixel(windowSurface, x + pixelSize - 1, y + i, red, green, blue, alpha);
-	//	set_pixel(windowSurface, x + i + 1, y + pixelSize - 1, red, green, blue, alpha);
-	//	set_pixel(windowSurface, x, y + i + 1, red, green, blue, alpha);
-	//}
-}	
-//might not be necessary, can we get pixels from the screen instead?
-//int lightingArray[][];
+	block.x = x;
+	block.y = y;
+
+	block.h = pixelSize;
+	block.w = subPixelOffsetX;
+
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
+	SDL_FillRect(windowSurface, &block, pixel);
+}
+
+void setHorizontalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface *layer) {
+	if (!subPixelOffsetY) {
+		return;
+	}
+	x = x * pixelSize;
+	y = y * pixelSize + (pixelSize - subPixelOffsetY);
+
+	block.x = x;
+	block.y = y;
+
+	block.h = subPixelOffsetY;
+	block.w = pixelSize;
+
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
+	SDL_FillRect(windowSurface, &block, pixel);
+}
 
 bool OOB(int x, int y) {
 	if (x > 0  && y > 0 && x < GAME_WIDTH && y < GAME_HEIGHT) {
@@ -130,11 +191,13 @@ bool OOB(int x, int y) {
 bool yOOB(int y) {
 	return y < 0 || y >= GAME_HEIGHT;
 }
+
 bool xOOB(int x) {
 	return x < 0 || x >= GAME_WIDTH;
 }
 
 float pixDistLookupTable[2 * GAME_WIDTH][2 * GAME_HEIGHT];
+float pixDistLookupTable2[2 * GAME_WIDTH][2 * GAME_HEIGHT];
 
 int occluded[GAME_WIDTH][GAME_HEIGHT] = { {} };
 
@@ -154,6 +217,7 @@ void fillLookupTables() {
 			int xdist = GAME_WIDTH - i;
 			int ydist = GAME_HEIGHT - j;
 			pixDistLookupTable[i][j] = sqrt(xdist*xdist + ydist*ydist);
+			pixDistLookupTable2[i][j] = (xdist * xdist) + (ydist * ydist);
 			
 			if (i != GAME_WIDTH || j != GAME_HEIGHT) {
 				float angleToCenter = atan2f(ydist, xdist) * 180 / 3.1415;
@@ -208,19 +272,25 @@ void fillLookupTables() {
 	}
 }
 
-float rises[25] = { 0, 1, 1, 1, 2, 4, 1,  4,  2,  1,  1,  1,  0, -1, -1, -1, -2, -4, -1, -4, -2, -1 ,-1 ,-1, 0 };
-float runs[25] = { 1, 4, 2, 1, 1, 1, 0, -1, -1, -1, -2, -4, -1, -4, -2, -1, -1, -1,  0, 1,   1,  1,  2,  4, 1 };
-float snapAngles[25];
+                     //first octant        //second(both pos, flip)   // third(x negative, same pairs)		//fourth(firstButxneg)					//fifth(bothneg,sameptasfirst)    //6th(2nd,2neg)                      //7th,						  /8th!
+float rises[] = { 0,1,1,1,2,1,3,1,2,3,4,   1,2,3,3,4,4,5,5,5,5,       2, 3, 3, 4, 4, 5, 5, 5, 5,              0, 1, 1, 1, 2, 1, 3, 1, 2, 3, 4,       -1,-1,-1,-2,-1,-3,-1,-2,-3,-4,     -1,-2,-3,-3,-4,-4,-5,-5,-5,-5,      -2,-3,-3,-4,-4,-5,-5,-5,-5,    -1,-1,-1,-2,-1,-3,-1,-2,-3,-4,-0 };
+float runs[] = { 1,1,2,3,3,4,4,5,5,5,5,    0,1,1,2,1,3,1,2,3,4,      -1,-1,-2,-1,-3,-1,-2,-3,-4,             -1,-1,-2,-3,-3,-4,-4,-5,-5,-5,-5,       -1,-2,-3,-3,-4,-4,-5,-5,-5,-5,     0,-1,-1,-2,-1,-3,-1,-2,-3,-4,        1, 1, 2, 1, 3, 1, 2, 3, 4,     1, 2, 3, 3, 4, 4, 5, 5, 5, 5, 1 };
+const int numVirtualRays = 81;
+
+//float rises[25] = { 0, 1, 1, 1, 2, 4, 1,  4,  2,  1,  1,  1,  0, -1, -1, -1, -2, -4, -1, -4, -2, -1 ,-1 ,-1, 0 };
+//float runs[25] = { 1, 4, 2, 1, 1, 1, 0, -1, -1, -1, -2, -4, -1, -4, -2, -1, -1, -1,  0, 1,   1,  1,  2,  4, 1 };
+float snapAngles[numVirtualRays];
 
 //TODO: test if theres overshooting for pixels near the center. might have to edit those. not a big deal though i think.
 void fillTraceBackTable() {
 	printf("STARTING FILLTRACEBACKTABLE");
-	for (int i = 0; i < 25; i++) {
+	for (int i = 0; i < numVirtualRays; i++) {
 		snapAngles[i] = atan2f(rises[i], runs[i]) * 180 / 3.14159;
+		printf("snapAngle %d: %f\n", i, snapAngles[i]);
 		if (snapAngles[i] < 0 && snapAngles[i] > -2) { snapAngles[i] = 0; }
 		if (snapAngles[i] < 0) { snapAngles[i] += 360; }
 	}
-	snapAngles[24] = 360;
+	snapAngles[numVirtualRays] = 360;
 	for (int i = 0; i < GAME_WIDTH << 1; i++) {
 		for (int j = 0; j < GAME_HEIGHT << 1; j++) {
 			int xdist = GAME_WIDTH - i;
@@ -233,7 +303,7 @@ void fillTraceBackTable() {
 				int closestAngleIndex = 0;
 				float closestDistance = 365;
 			
-				for (int k = 0; k < 24; k++) {
+				for (int k = 0; k < numVirtualRays; k++) {
 					if (abs(snapAngles[k] - angleToCenter) < closestDistance) {
 						closestAngle = snapAngles[k];
 						closestAngleIndex = k;
@@ -277,7 +347,6 @@ void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
 	//printf("lookDirs = (%d,%d)\n", look1X, look1Y);
 	if (occluded[x + look1X][y + look1Y]) {
 		occluded[x][y] = 1;
-		setBigPixel(x, y, 0, 0, 0); //is this necessary?
 	}
 	else {
 		//now check secondary lookback? add later
@@ -298,6 +367,44 @@ void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
 			//printf("(%d,%d)\n", x,y);
 			//printf("(%d)\n",dist);
 			setBigPixel(x, y, clamp(255 - 3*dist), clamp(255 - 3 * dist), clamp(255 - 3 * dist));
+		}
+	}
+}
+
+//idea: optimize the spiral by checking if everything is occluded for 4 legs in a row. use ring buffer? or one int, edit with bitwise.
+//TODO: edit drawpixel to clamp inputs?
+
+const int numRays = 700;
+void rayBasedLighting(int lightSourceX, int lightSourceY) {
+	//should i do one ray at a time? or all at once?
+	//one
+	for (int i = 0; i < numRays; i++) {
+		float x = lightSourceX;
+		float y = lightSourceY;
+		
+		float xStep = cos(2 * PI * i / numRays);
+		float yStep = sin(2 * PI * i / numRays);
+		float distFromCenter = 1;
+		float distFromCenter1 = 1;
+		while ( distFromCenter < 50 && !OOB((int)x,(int)y) && caveTerrain[ringMod((int)(x)+bufferOffsetX,GAME_WIDTH)][ringMod((int)(y) + bufferOffsetY,GAME_HEIGHT)]) {
+			setBigPixelNoOffset((int)x, (int)y, (int) 255/(distFromCenter), (int) 255 / (distFromCenter), (int) 255 / (distFromCenter), 100);
+			x += xStep;
+			y += yStep;
+			distFromCenter = pixDistLookupTable2[(int)x - lightSourceX + GAME_WIDTH][(int)y - lightSourceY + GAME_HEIGHT]/100 + 1;
+			distFromCenter1 = pixDistLookupTable[(int)x - lightSourceX + GAME_WIDTH][(int)y - lightSourceY + GAME_HEIGHT] / 20 + 1;
+		}
+		if (!OOB((int)x, (int)y) && distFromCenter < 50) {
+			// (xStep < 0 || yStep < 0) {
+				//setBigPixelNoOffset((int)x, (int)y, (int)255 / (distFromCenter), (int)255 / (distFromCenter), (int)255 / (distFromCenter), 0);
+			//}
+			if (debugFlag && xStep < 0) {
+				setVerticalSlab((int)x, (int)y, (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), 255, windowSurface);
+			}
+			if (debugFlag && yStep < 0) {
+				setHorizontalSlab((int)x, (int)y, (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), 255, windowSurface);
+
+			}
+			setBigPixel((int)x, (int)y, (uint8_t) (255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
 	}
 }
@@ -403,35 +510,25 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 //it might be time to split into multiple files
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
-
-int main(int argc, char* args[]) {
-	
-	int frameCount = 0;
+void initializeEverything() {
+	srand(time(0));
 
 	//first, we initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
-	
-	srand(time(0));
 
 	//create window
 	window = SDL_CreateWindow("Cave Game Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-	
+
 	//now get window surface
 	windowSurface = SDL_GetWindowSurface(window);
 
-	//ok now we can start our main loop:
-	bool quit = false;
-	SDL_Event event;
+	layerTwo = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_ARGB8888);
+
+	SDL_SetSurfaceBlendMode(layerTwo, SDL_BLENDMODE_BLEND);
 
 	//fill pixelDistance lookup table
 	fillLookupTables();
 	fillTraceBackTable();
-
-	//bools to keep track of where/if we are accelerating
-	bool pushingLeft = false;
-	bool pushingUp = false;
-	bool pushingRight = false;
-	bool pushingDown = false;
 
 	//initialize the terrain array:
 	for (int i = 0; i < GAME_WIDTH; i++) {
@@ -439,12 +536,32 @@ int main(int argc, char* args[]) {
 			caveTerrain[i][j] = SimplexNoise::noise(i / noiseScaleFactor, j / noiseScaleFactor) > noiseCutoffLevel;
 		}
 	}
+}
+
+int main(int argc, char* args[]) {
+	
+	int frameCount = 0;
+	
+	initializeEverything();
+
+	//ok now we can start our main loop:
+	bool quit = false;
+	SDL_Event event;
+
+	//bools to keep track of where/if we are accelerating
+	bool pushingLeft = false;
+	bool pushingUp = false;
+	bool pushingRight = false;
+	bool pushingDown = false;
 
 	int prevBufferOffsetX = 0;
 	int prevBufferOffsetY = 0;
 
-	bool debugStepFlag = 0;
+	const int fpsWindowSize = 100;
 
+	uint32_t prevTicks = -1000;
+	uint32_t lastNFrames[fpsWindowSize] = {};
+	
 	while (!quit) {
 		//first thing we do in the loop is handle inputs
 		while (SDL_PollEvent(&event) != 0) {
@@ -456,7 +573,7 @@ int main(int argc, char* args[]) {
 			if (event.type == SDL_KEYDOWN) {
 				switch (event.key.keysym.sym) {
 					case SDLK_0:
-						debugStepFlag = true;
+						debugFlag = 1;
 						break;
 
 					case SDLK_UP:
@@ -481,6 +598,9 @@ int main(int argc, char* args[]) {
 			}
 			if (event.type == SDL_KEYUP) {
 				switch (event.key.keysym.sym) {
+					case SDLK_0:
+						debugFlag = false;
+						break;
 					case SDLK_UP:
 						pushingUp = false;
 						yAccel = 0;
@@ -502,11 +622,6 @@ int main(int argc, char* args[]) {
 				}
 			}
 		}
-
-		/*if (!debugStepFlag) {
-			continue;
-		}
-		*/
 
 		//now adjust movement speed
 		bool pushingSide = pushingLeft || pushingRight;
@@ -542,9 +657,20 @@ int main(int argc, char* args[]) {
 				yAccel = -ACCEL_RATE;
 			}
 		}
-		xSpeed += xAccel;
-		ySpeed += yAccel;
 
+		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
+		//int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
+		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+
+		float frameDelta = 1;
+		//float frameDelta = (SDL_GetTicks() - prevTicks)/2;
+		//if (frameDelta <= 0) { frameDelta = 1; }
+		//prevTicks = SDL_GetTicks();
+		
+		xSpeed += xAccel/frameDelta;
+		ySpeed += yAccel/frameDelta;
+
+		//TODO: figure out a way to frameDelta this
 		if (xAccel == 0) {
 			xSpeed *= 0.99;
 		}
@@ -561,8 +687,8 @@ int main(int argc, char* args[]) {
 		int prevX = floor(playerX);
 		int prevY = floor(playerY);
 
-		playerX += xSpeed;
-		playerY += ySpeed;
+		playerX += xSpeed/frameDelta;
+		playerY += ySpeed/frameDelta;
 
 		//maybe we have to do it virtually.
 		//ok dont use bufferoffset, just use discrete x and y
@@ -623,12 +749,23 @@ int main(int argc, char* args[]) {
 		float subPixelDiffX = playerX - floor(playerX);
 		float subPixelDiffY = playerY - floor(playerY);
 		
-		subPixelOffsetX = round(subPixelDiffX * 2);
-		subPixelOffsetY = round(subPixelDiffY * 2);
+		subPixelOffsetX = round(subPixelDiffX * (pixelSize - 1));
+		subPixelOffsetY = round(subPixelDiffY * (pixelSize - 1));
 
 		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
-		handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
+		//
 		
+		//Uint32 pixel =  0| ((Uint32)0 << 8) | ((Uint32)0 << 16) | ((Uint32)0 << 24);
+		
+		SDL_FillRect(layerTwo, NULL, 0);
+		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
+		rayBasedLighting(GAME_WIDTH /2, GAME_HEIGHT / 2);
+		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
+		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
+		SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
+
+		//setBigPixelNoOffset(GAME_WIDTH / 2, GAME_HEIGHT / 2, 255, 0, 0, 255);
+
 		//test of spiral raycaster
 		//draw50Lines
 		
@@ -660,41 +797,10 @@ int main(int argc, char* args[]) {
 	SDL_DestroyWindow(window);
 	window = NULL;
 
+	SDL_FreeSurface(layerTwo);
+	
 	//Quit SDL subsystems
 	SDL_Quit();
 
 	return 0;
 }
-
-void draw50Lines(){
-	for (int i = 0; i < 40; i++) {
-		int startX = rand() % 333;
-		int startY = rand() % 333;
-
-		int endyX = GAME_WIDTH / 2;
-		int endyY = GAME_HEIGHT / 2;
-
-		while (startX != endyX || endyY != startY) {
-			setBigPixel(startX, startY, 255, 255, 255);
-			startX += pixTraceBackDirX[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
-			startY += pixTraceBackDirY[startX - endyX + GAME_WIDTH][startY - endyY + GAME_HEIGHT];
-		}
-	}
-}
-
-
-//heres the plan:
-//	in main loop, we check for button pushes, adjust speed of movement
-//	apply movement (rotation and position)
-//		do that by adjusting modulo of buffer
-//	fill in new rows with shit.
-
-//	now display:
-//		spiral out
-//		each pixel borrows from the ones on the way back home, if they're in the cone.
-//			if you are a wall and you borrow from non wall, brighten yourself
-//			if you are a wall and you borrow from a wall, set self to 0
-// fill whole screen like that.
-//		Maybe in that process of coloring, we can decide whether to use the tileable thing or the full thing.
-// maybe loop through once and fill in the cores, and then loop through again and fill in the highlights
-// 
