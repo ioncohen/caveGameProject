@@ -45,6 +45,9 @@ SDL_Renderer* renderer = NULL;
 //Texture to store the lighting falloff
 SDL_Texture* lightingTexture = NULL;
 
+//Black texture to poke holes in and renderclear
+SDL_Texture* darknessTexture = NULL;
+
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
 float playerX = 0;
@@ -94,8 +97,6 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 	block.x = x;
 	block.y = y;
 
-	block.h = pixelSize;
-	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)255 << 24);
@@ -109,8 +110,6 @@ void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue,
 	block.x = x;
 	block.y = y;
 
-	block.h = pixelSize;
-	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
@@ -124,8 +123,6 @@ void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue,
 	block.x = x;
 	block.y = y;
 
-	block.h = pixelSize;
-	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
@@ -138,9 +135,6 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t
 
 	block.x = x;
 	block.y = y;
-
-	block.h = pixelSize;
-	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
@@ -154,8 +148,6 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t
 	block.x = x;
 	block.y = y;
 
-	block.h = pixelSize;
-	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
@@ -177,6 +169,8 @@ void setVerticalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uin
 
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
 	SDL_FillRect(windowSurface, &block, pixel);
+	block.h = pixelSize;
+	block.w = pixelSize;
 }
 
 void setHorizontalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface *layer) {
@@ -194,6 +188,8 @@ void setHorizontalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, u
 
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
 	SDL_FillRect(windowSurface, &block, pixel);
+	block.h = pixelSize;
+	block.w = pixelSize;
 }
 
 bool OOB(int x, int y) {
@@ -343,9 +339,6 @@ int clamp(int value) {
 	return value * (value >= 0);
 }
 
-
-
-
 //all inputs are locations in the game grid. need to be translated wrt center
 void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
 	
@@ -428,7 +421,7 @@ void createLightingTexture() {
 	printf("format: (%d) | access: (%d) | width: (%d) | height (%d)", format, access, width, height);
 
 	SDL_FreeSurface(lightingSurface);
-	//SDL_SetTextureBlendMode(lightingTexture, SDL_BLENDMODE_ADD);
+	SDL_SetTextureBlendMode(lightingTexture, SDL_BLENDMODE_NONE);
 }
 
 const int numRays = 1000;
@@ -469,6 +462,9 @@ void rayBasedLighting(int lightSourceX, int lightSourceY) {
 //TODO: edit this function so that it marks pixels in layer2 as transparent, rather than drawing the same distance function forever.
 //	Create a modified setpixel that just turns things to all 0s.
 void rayLightingHack(int lightSourceX, int lightSourceY) {
+	SDL_SetRenderTarget(renderer, darknessTexture);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
+	SDL_RenderClear(renderer);
 	for (int i = 0; i < numRays; i++) {
 		float x = lightSourceX;
 		float y = lightSourceY;
@@ -476,20 +472,27 @@ void rayLightingHack(int lightSourceX, int lightSourceY) {
 		float xStep = cos(2 * PI * i / numRays);
 		float yStep = sin(2 * PI * i / numRays);
 		int countSteps = 0;
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 		while (countSteps < 50 && !OOB((int)x, (int)y) && caveTerrain[ringMod((int)(x)+bufferOffsetX, GAME_WIDTH)][ringMod((int)(y)+bufferOffsetY, GAME_HEIGHT)]) {
-			setBigPixel((int)x, (int)y, 0, 0, 0, 0, layerTwo);
+			block.x = (int)x * pixelSize-subPixelOffsetX;
+			block.y = (int)y * pixelSize-subPixelOffsetY;
+			SDL_RenderFillRect(renderer, &block);
 			x += xStep;
 			y += yStep;
 			countSteps++;
 		}
 		if (!OOB((int)x, (int)y) && countSteps < 50) {
-			//change some 255s later to be based on distance
-			setBigPixel((int)x, int(y), 255, 255, 255, 255, layerTwo);
+			block.x = (int)x * pixelSize-subPixelOffsetX;
+			block.y = (int)y * pixelSize-subPixelOffsetY;
+			SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+			SDL_RenderFillRect(renderer, &block);
 			
 			// previous wall light func, maybe reuse for this^
 			//setBigPixel((int)x, (int)y, (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
 	}
+	SDL_SetRenderTarget(renderer, NULL);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
 }
 
 void handleLighting(int lightSourceX, int lightSourceY) {
@@ -600,6 +603,9 @@ void initializeEverything() {
 	//first, we initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
 
+	block.h = pixelSize;
+	block.w = pixelSize;
+
 	//create window
 	window = SDL_CreateWindow("Cave Game Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
 
@@ -609,7 +615,9 @@ void initializeEverything() {
 		printf("ERROR: RENDERER CREATION FAILED\n");
 		printf(SDL_GetError());
 	}
-	printf("drawcolor succeeded?: %d", SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0));
+	printf("drawcolor succeeded?: %d", SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255));
+
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
 	//now get window surface
 	windowSurface = SDL_GetWindowSurface(window);
@@ -637,6 +645,9 @@ void initializeEverything() {
 	}
 
 	createLightingTexture();
+
+	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
 }
 
 int main(int argc, char* args[]) {
@@ -856,29 +867,30 @@ int main(int argc, char* args[]) {
 		//Uint32 pixel =  255| ((Uint32)0 << 8) | ((Uint32)255 << 16) | ((Uint32)255 << 24);
 
 		//clear the screen so we can draw to it later
-		SDL_FillRect(windowSurface, NULL, 0);
+		//SDL_FillRect(windowSurface, NULL, 0);
 
-		SDL_FillRect(layerTwo, NULL, 0);
+		//SDL_FillRect(layerTwo, NULL, 0);
 		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
 		//rayBasedLighting(GAME_WIDTH /2, GAME_HEIGHT / 2);
 		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
 		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
 
 		rayLightingHack(GAME_WIDTH / 2, GAME_HEIGHT / 2);
-		
-		SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
 
 		//SDL_Texture* layer2Tex = SDL_CreateTextureFromSurface(renderer, layerTwo);
 		
-		//SDL_RenderClear(renderer);
-		//SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+		SDL_RenderClear(renderer);
+		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+
+		//SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
 		//SDL_RenderCopy(renderer, layer2Tex, NULL, NULL);
-		//SDL_RenderPresent(renderer);
+		SDL_RenderPresent(renderer);
 		//setBigPixelNoOffset(GAME_WIDTH / 2, GAME_HEIGHT / 2, 255, 0, 0, 255);
 
 
 		//update the surface, because we have made all the necessary changes
-		SDL_UpdateWindowSurface(window);
+		//SDL_UpdateWindowSurface(window);
 		//printf("frame done");
 		frameCount++;
 		//printf("OVR AVG FPS: %d", 1000 * frameCount / SDL_GetTicks());
