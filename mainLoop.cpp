@@ -138,7 +138,7 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t
 	block.w = pixelSize;
 	//blue version
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
-	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)255 << 24);
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
 	SDL_FillRect(layer, &block, pixel);
 }
 
@@ -541,6 +541,28 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 	//printf("finishedDisplaying the spiral :)!!!!");
 }
 
+SDL_Surface* lightingSurface = NULL;
+const float distanceScaleFactor = 100;
+void createLightingTexture() {
+	//TODO: allow tis method to be used from any pt, not just center.
+	lightingSurface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA8888); //maybe remove alpha channel?
+	//SDL_SetSurfaceBlendMode(lightingSurface, SDL_BLENDMODE_ADD);
+	for (int i = 0; i < GAME_WIDTH; i++) {
+		for (int j = 0; j < GAME_HEIGHT; j++) {
+			float xDist = (GAME_WIDTH / 2 - i);
+			float yDist = (GAME_HEIGHT / 2 - j);
+			float dSquared = xDist * xDist + yDist * yDist;
+			dSquared /= distanceScaleFactor;
+			dSquared++;
+			//if (dSquared < 1) { dSquared = 1; };
+			setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), lightingSurface);
+		}
+	}
+
+	SDL_SetSurfaceBlendMode(lightingSurface, SDL_BLENDMODE_NONE);
+}
+
+
 //it might be time to split into multiple files
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
@@ -570,6 +592,8 @@ void initializeEverything() {
 			caveTerrain[i][j] = SimplexNoise::noise(i / noiseScaleFactor, j / noiseScaleFactor) > noiseCutoffLevel;
 		}
 	}
+
+	createLightingTexture();
 }
 
 int main(int argc, char* args[]) {
@@ -785,18 +809,14 @@ int main(int argc, char* args[]) {
 		
 		subPixelOffsetX = round(subPixelDiffX * (pixelSize - 1));
 		subPixelOffsetY = round(subPixelDiffY * (pixelSize - 1));
-
-		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
-		//
 		
-		//Uint32 pixel =  0| ((Uint32)0 << 8) | ((Uint32)0 << 16) | ((Uint32)0 << 24);
+		//color to fill layerTwo with.
+		Uint32 pixel =  0| ((Uint32)0 << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 		
-		SDL_FillRect(layerTwo, NULL, 0);
-		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
+		SDL_FillRect(layerTwo, NULL, pixel);
 		rayLightingHack(GAME_WIDTH /2, GAME_HEIGHT / 2);
+		
 		SDL_BlitSurface(lightingSurface, NULL, windowSurface, NULL);
-		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
-		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
 		SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
 
 		//setBigPixelNoOffset(GAME_WIDTH / 2, GAME_HEIGHT / 2, 255, 0, 0, 255);
