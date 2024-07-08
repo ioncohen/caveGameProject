@@ -97,11 +97,6 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
 	SDL_FillRect(windowSurface, &block, pixel);
 }
 
-void setBigPixelCorner(int x, int y, uint8_t red, uint8_t green, uint8_t blue) {
-	SDL_Rect horizBlock;
-	x = x * pixelSize;
-}
-
 void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha) {
 	x = x * pixelSize;
 	y = y * pixelSize;
@@ -115,6 +110,21 @@ void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue,
 	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
 	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
 	SDL_FillRect(windowSurface, &block, pixel);
+}
+
+void setBigPixelNoOffset(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface* layer) {
+	x = x * pixelSize;
+	y = y * pixelSize;
+
+	block.x = x;
+	block.y = y;
+
+	block.h = pixelSize;
+	block.w = pixelSize;
+	//blue version
+	//Uint32 pixel = (blue/2) | ((Uint32)(green/3) << 8) | ((Uint32)0 << 16) | ((Uint32)255 << 24);
+	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
+	SDL_FillRect(layer, &block, pixel);
 }
 
 void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface* layer) {
@@ -405,6 +415,30 @@ void rayBasedLighting(int lightSourceX, int lightSourceY) {
 
 			}
 			setBigPixel((int)x, (int)y, (uint8_t) (255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
+		}
+	}
+}
+
+void rayLightingHack(int lightSourceX, int lightSourceY) {
+	for (int i = 0; i < numRays; i++) {
+		float x = lightSourceX;
+		float y = lightSourceY;
+
+		float xStep = cos(2 * PI * i / numRays);
+		float yStep = sin(2 * PI * i / numRays);
+		int countSteps = 0;
+		while (countSteps < 50 && !OOB((int)x, (int)y) && caveTerrain[ringMod((int)(x)+bufferOffsetX, GAME_WIDTH)][ringMod((int)(y)+bufferOffsetY, GAME_HEIGHT)]) {
+			setBigPixel((int)x, (int)y, 0, 0, 0, 0, layerTwo);
+			x += xStep;
+			y += yStep;
+			countSteps++;
+		}
+		if (!OOB((int)x, (int)y) && countSteps < 50) {
+			//change some 255s later to be based on distance
+			setBigPixel((int)x, int(y), 255, 255, 255, 255, layerTwo);
+
+			// previous wall light func, maybe reuse for this^
+			//setBigPixel((int)x, (int)y, (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
 	}
 }
@@ -759,7 +793,8 @@ int main(int argc, char* args[]) {
 		
 		SDL_FillRect(layerTwo, NULL, 0);
 		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
-		rayBasedLighting(GAME_WIDTH /2, GAME_HEIGHT / 2);
+		rayLightingHack(GAME_WIDTH /2, GAME_HEIGHT / 2);
+		SDL_BlitSurface(lightingSurface, NULL, windowSurface, NULL);
 		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
 		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
 		SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
