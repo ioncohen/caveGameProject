@@ -303,6 +303,9 @@ int clamp(int value) {
 }
  
 //idea, use memcopy to fill occluded array, then propagate 1s out? or at least then you dont have to check
+//maybe redo the pixtraceback arrays to be one big array that returns a tuple. That way dont have to calculate the indexes 4 times.
+//how can we change the spiral to work with multiple light sources? it will already work with any light distnce.
+//we can use additive lighting to generate the lightmap background. but how to calculate occlusion from many sources? i guess we just have to double our work :(
 void rowByRowLighting(int lightSourceX, int lightSourceY) {
 	memset(occluded, 0, sizeof occluded);
 
@@ -317,9 +320,7 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 		for (int j = lightSourceY; j < GAME_HEIGHT && j >= 0; j += xdir) {
 			for (int i = lightSourceX; i < GAME_WIDTH && i >= 0; i+= ydir) {
 				int x = i + pixTraceBackDirX[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
-				int x2 = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 				int y = j + pixTraceBackDirY[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
-				int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 				//check if prev is occluded
 				if (occluded[x][y]) {
 					occluded[i][j] = 1;
@@ -328,6 +329,8 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 					occluded[i][j] = 1;
 					block.x = i * pixelSize - subPixelOffsetX;
 					block.y = j * pixelSize - subPixelOffsetY;
+					int x2 = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+					int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					if (!occluded[x2][y2]) {
 						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 						SDL_RenderFillRect(renderer, &block);
