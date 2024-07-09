@@ -307,33 +307,48 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 	memset(occluded, 0, sizeof occluded);
 
 	SDL_SetRenderTarget(renderer, darknessTexture);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
+	SDL_RenderClear(renderer);
 
 	//upper right (in my head) quadrant
-	for (int j = lightSourceY; j < GAME_HEIGHT; j++) {
-		for (int i = lightSourceX; i < GAME_WIDTH; i++) {
-			int x = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
-			int y = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
-			//check if prev is occluded
-			if (occluded[x][y]) {
-				occluded[i][j] = 1;
+	int xdir = 1;
+	int ydir = 1;
+	for (int q = 0; q < 4; q++) {
+		for (int j = lightSourceY; j < GAME_HEIGHT && j >= 0; j += xdir) {
+			for (int i = lightSourceX; i < GAME_WIDTH && i >= 0; i+= ydir) {
+				int x = i + pixTraceBackDirX[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+				int x2 = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+				int y = j + pixTraceBackDirY[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+				int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+				//check if prev is occluded
+				if (occluded[x][y]) {
+					occluded[i][j] = 1;
+				}
+				else if (!caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)]) {
+					occluded[i][j] = 1;
+					block.x = i * pixelSize - subPixelOffsetX;
+					block.y = j * pixelSize - subPixelOffsetY;
+					if (!occluded[x2][y2]) {
+						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+						SDL_RenderFillRect(renderer, &block);
+					}
+				}
+				else {
+					//prev in light, and we are not terrain. So we are in light. Draw a transparent block.
+					block.x = i * pixelSize - subPixelOffsetX;
+					block.y = j * pixelSize - subPixelOffsetY;
+					SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+					SDL_RenderFillRect(renderer, &block);
+				}
 			}
-			else if (!caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)]) {
-				occluded[i][j] = 1;
-				block.x = i*pixelSize - subPixelOffsetX;
-				block.y = j*pixelSize - subPixelOffsetY;
-				SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-				SDL_RenderFillRect(renderer, &block);
-			}
-			else {
-				//prev in light, and we are not terrain. So we are in light. Draw a transparent block.
-				block.x = i * pixelSize - subPixelOffsetX;
-				block.y = j * pixelSize - subPixelOffsetY;
-				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-				SDL_RenderFillRect(renderer, &block);
-			}
+		}
+		xdir = -xdir;
+		if (xdir == 1) {
+			ydir = -ydir;
 		}
 	}
 	SDL_SetRenderTarget(renderer, NULL);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
 }
 
 
@@ -625,8 +640,8 @@ void initializeEverything() {
 	}
 
 	//fill pixelDistance lookup table
-	//fillLookupTables();
-	//fillTraceBackTable();
+	fillLookupTables();
+	fillTraceBackTable();
 
 	//initialize the terrain array:
 	for (int i = 0; i < GAME_WIDTH; i++) {
@@ -866,10 +881,9 @@ int main(int argc, char* args[]) {
 		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
 		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
 
-		rayLightingHack(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+		//rayLightingHack(GAME_WIDTH / 2, GAME_HEIGHT / 2);
 
-		//SDL_Texture* layer2Tex = SDL_CreateTextureFromSurface(renderer, layerTwo);
-		
+		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2);
 		SDL_RenderClear(renderer);
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
