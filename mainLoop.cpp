@@ -3,6 +3,7 @@
 #include "SimplexNoise.h"
 #include <ctime>
 #include <cstdlib>
+#include <string.h>
 
 #define PI 3.14159265
 
@@ -154,44 +155,6 @@ void setBigPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t
 	SDL_FillRect(windowSurface, &block, pixel);
 }
 
-void setVerticalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface* layer) {
-	if (!subPixelOffsetX) {
-		return;
-	}
-	x = x * pixelSize + (pixelSize - subPixelOffsetX);
-	y = y * pixelSize;
-
-	block.x = x;
-	block.y = y;
-
-	block.h = pixelSize;
-	block.w = subPixelOffsetX;
-
-	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
-	SDL_FillRect(windowSurface, &block, pixel);
-	block.h = pixelSize;
-	block.w = pixelSize;
-}
-
-void setHorizontalSlab(int x, int y, uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha, SDL_Surface *layer) {
-	if (!subPixelOffsetY) {
-		return;
-	}
-	x = x * pixelSize;
-	y = y * pixelSize + (pixelSize - subPixelOffsetY);
-
-	block.x = x;
-	block.y = y;
-
-	block.h = subPixelOffsetY;
-	block.w = pixelSize;
-
-	Uint32 pixel = blue | ((Uint32)green << 8) | ((Uint32)red << 16) | ((Uint32)alpha << 24);
-	SDL_FillRect(windowSurface, &block, pixel);
-	block.h = pixelSize;
-	block.w = pixelSize;
-}
-
 bool OOB(int x, int y) {
 	if (x > 0  && y > 0 && x < GAME_WIDTH && y < GAME_HEIGHT) {
 		return false;
@@ -283,7 +246,7 @@ void fillLookupTables() {
 	}
 }
 
-                     //first octant        //second(both pos, flip)   // third(x negative, same pairs)		//fourth(firstButxneg)					//fifth(bothneg,sameptasfirst)    //6th(2nd,2neg)                      //7th,						  /8th!
+//first octant        //second(both pos, flip)   // third(x negative, same pairs)		//fourth(firstButxneg)					//fifth(bothneg,sameptasfirst)    //6th(2nd,2neg)                      //7th,						  /8th!
 float rises[] = { 0,1,1,1,2,1,3,1,2,3,4,   1,2,3,3,4,4,5,5,5,5,       2, 3, 3, 4, 4, 5, 5, 5, 5,              0, 1, 1, 1, 2, 1, 3, 1, 2, 3, 4,       -1,-1,-1,-2,-1,-3,-1,-2,-3,-4,     -1,-2,-3,-3,-4,-4,-5,-5,-5,-5,      -2,-3,-3,-4,-4,-5,-5,-5,-5,    -1,-1,-1,-2,-1,-3,-1,-2,-3,-4,-0 };
 float runs[] = { 1,1,2,3,3,4,4,5,5,5,5,    0,1,1,2,1,3,1,2,3,4,      -1,-1,-2,-1,-3,-1,-2,-3,-4,             -1,-1,-2,-3,-3,-4,-4,-5,-5,-5,-5,       -1,-2,-3,-3,-4,-4,-5,-5,-5,-5,     0,-1,-1,-2,-1,-3,-1,-2,-3,-4,        1, 1, 2, 1, 3, 1, 2, 3, 4,     1, 2, 3, 3, 4, 4, 5, 5, 5, 5, 1 };
 const int numVirtualRays = 81;
@@ -313,7 +276,7 @@ void fillTraceBackTable() {
 				float closestAngle = 0;
 				int closestAngleIndex = 0;
 				float closestDistance = 365;
-			
+
 				for (int k = 0; k < numVirtualRays; k++) {
 					if (abs(snapAngles[k] - angleToCenter) < closestDistance) {
 						closestAngle = snapAngles[k];
@@ -321,10 +284,10 @@ void fillTraceBackTable() {
 						closestDistance = abs(snapAngles[k] - angleToCenter);
 					}
 				}
-				
+
 				pixTraceBackDirX[i][j] = runs[closestAngleIndex];
 				pixTraceBackDirY[i][j] = rises[closestAngleIndex];
-				
+
 			}
 			else {
 				pixTraceBackDirX[i][j] = 0;
@@ -338,6 +301,41 @@ void fillTraceBackTable() {
 int clamp(int value) {
 	return value * (value >= 0);
 }
+ 
+//idea, use memcopy to fill occluded array, then propagate 1s out? or at least then you dont have to check
+void rowByRowLighting(int lightSourceX, int lightSourceY) {
+	memset(occluded, 0, sizeof occluded);
+
+	SDL_SetRenderTarget(renderer, darknessTexture);
+
+	//upper right (in my head) quadrant
+	for (int j = lightSourceY; j < GAME_HEIGHT; j++) {
+		for (int i = lightSourceX; i < GAME_WIDTH; i++) {
+			int x = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+			int y = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
+			//check if prev is occluded
+			if (occluded[x][y]) {
+				occluded[i][j] = 1;
+			}
+			else if (!caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)]) {
+				occluded[i][j] = 1;
+				block.x = i*pixelSize - subPixelOffsetX;
+				block.y = j*pixelSize - subPixelOffsetY;
+				SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+				SDL_RenderFillRect(renderer, &block);
+			}
+			else {
+				//prev in light, and we are not terrain. So we are in light. Draw a transparent block.
+				block.x = i * pixelSize - subPixelOffsetX;
+				block.y = j * pixelSize - subPixelOffsetY;
+				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+				SDL_RenderFillRect(renderer, &block);
+			}
+		}
+	}
+	SDL_SetRenderTarget(renderer, NULL);
+}
+
 
 //all inputs are locations in the game grid. need to be translated wrt center
 void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
@@ -424,7 +422,7 @@ void createLightingTexture() {
 	SDL_SetTextureBlendMode(lightingTexture, SDL_BLENDMODE_NONE);
 }
 
-const int numRays = 1000;
+const int numRays = 360;
 void rayBasedLighting(int lightSourceX, int lightSourceY) {
 	//should i do one ray at a time? or all at once?
 	//one
@@ -447,13 +445,6 @@ void rayBasedLighting(int lightSourceX, int lightSourceY) {
 			// (xStep < 0 || yStep < 0) {
 				//setBigPixelNoOffset((int)x, (int)y, (int)255 / (distFromCenter), (int)255 / (distFromCenter), (int)255 / (distFromCenter), 0);
 			//}
-			if (debugFlag && xStep < 0) {
-				setVerticalSlab((int)x, (int)y, (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), 255, windowSurface);
-			}
-			if (debugFlag && yStep < 0) {
-				setHorizontalSlab((int)x, (int)y, (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), (uint8_t)(255 / distFromCenter), 255, windowSurface);
-
-			}
 			setBigPixel((int)x, (int)y, (uint8_t) (255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
 	}
