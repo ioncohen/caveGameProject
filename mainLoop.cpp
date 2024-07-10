@@ -49,6 +49,9 @@ SDL_Texture* darknessTexture = NULL;
 //player submarine texture
 SDL_Texture* playerSubmarineTexture = NULL;
 
+//Final buffer before the actual screen
+SDL_Texture* finalBuffer = NULL;
+
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
 float playerX = 0;
@@ -350,7 +353,7 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 			ydir = -ydir;
 		}
 	}
-	SDL_SetRenderTarget(renderer, NULL);
+	SDL_SetRenderTarget(renderer, finalBuffer);
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
 }
 
@@ -500,7 +503,7 @@ void rayLightingHack(int lightSourceX, int lightSourceY) {
 			//setBigPixel((int)x, (int)y, (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
 	}
-	SDL_SetRenderTarget(renderer, NULL);
+	SDL_SetRenderTarget(renderer, finalBuffer);
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); //might be unnecessary
 }
 
@@ -617,7 +620,6 @@ void loadImages() {
 	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_BLEND);
 }
 
-SDL_Window *debugWindow = NULL;
 void initializeEverything() {
 	printf("initializing everything :)");
 
@@ -671,6 +673,10 @@ void initializeEverything() {
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
 
 	loadImages();
+
+	finalBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+	SDL_SetTextureBlendMode(finalBuffer, SDL_BLENDMODE_NONE);
+	SDL_SetRenderTarget(renderer, finalBuffer);
 }
 
 int main(int argc, char* args[]) {
@@ -680,6 +686,13 @@ int main(int argc, char* args[]) {
 	subDestRect.y = (GAME_WIDTH/2 - 6)*pixelSize;
 	subDestRect.w = 10 * pixelSize;
 	subDestRect.h = 7 * pixelSize;
+	
+	SDL_Rect viewportRect;
+	viewportRect.x = 40;
+	viewportRect.y = 40;
+	viewportRect.w = SCREEN_WIDTH-80;
+	viewportRect.h = SCREEN_WIDTH-80;
+	
 	int frameCount = 0;
 	
 	initializeEverything();
@@ -847,7 +860,6 @@ int main(int argc, char* args[]) {
 		int prevBufferOffsetY = bufferOffsetY;
 
 		//calculate new bufferOffset from player position
-		//we use unsigned int to get the ring buffer modulus behavior, hopefully.
 		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
 		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
 
@@ -898,35 +910,53 @@ int main(int argc, char* args[]) {
 		subPixelOffsetX = round(subPixelDiffX * (pixelSize - 1));
 		subPixelOffsetY = round(subPixelDiffY * (pixelSize - 1));
 
-		//at this point our cave terrain array shoul dbe good. it has all the right data storred in the weird way in all the right places. So we just have to print it out using the buffer?
-		//
-		// 
-		// 
-		//Uint32 pixel =  255| ((Uint32)0 << 8) | ((Uint32)255 << 16) | ((Uint32)255 << 24);
+		//calculate viewport lag
+		//first draft: base it on speed. TODO: replace this stuff with constants (the 20s, the 100)
+		viewportRect.x = 40 - xSpeed * 200;
+		viewportRect.y = 40 - ySpeed * 200;
+		if (viewportRect.x < 0) {
+			viewportRect.x = 0;
+		}
+		if (viewportRect.y < 0) {
+			viewportRect.y = 0;
+		}
+		if (viewportRect.x > 79) {
+			viewportRect.x = 79;
+		}
+		if (viewportRect.y > 79) {
+			viewportRect.y = 79;
+		}
 
-		//clear the screen so we can draw to it later
-		//SDL_FillRect(windowSurface, NULL, 0);
 
-		//SDL_FillRect(layerTwo, NULL, 0);
-		//handleLighting(GAME_WIDTH/2, GAME_HEIGHT/2);
-		//rayBasedLighting(GAME_WIDTH /2, GAME_HEIGHT / 2);
-		//rayBasedLighting(GAME_WIDTH / 4, GAME_HEIGHT / 2);
-		//rayBasedLighting(2 * GAME_WIDTH / 3, 2 * GAME_HEIGHT / 3);
 
-		//rayLightingHack(GAME_WIDTH / 2, GAME_HEIGHT / 2);
 
-		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+		//Clear real backBuffer
 		SDL_RenderClear(renderer);
+
+		//Poke holes in the darkness texture
+		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+		
+		if (SDL_GetRenderTarget(renderer) == finalBuffer) {
+			printf("RENDERING TO FINAL BUFFER :)");
+		}
+		//Clear finalBuffer
+		SDL_RenderClear(renderer);
+
+		//Add lightingTexture to finalBuffer
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+
+		//Add darkness texture to finalBuffer
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+
+		//Add submarine texture to finalBuffer
 		SDL_RenderCopy(renderer, playerSubmarineTexture, NULL, &subDestRect);
-		//SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
+
+		//Now draw a portion of the window to the real place
+		SDL_SetRenderTarget(renderer, NULL);
+		SDL_RenderClear(renderer);
+		SDL_RenderCopy(renderer, finalBuffer, &viewportRect, NULL);
 		SDL_RenderPresent(renderer);
-		//setBigPixelNoOffset(GAME_WIDTH / 2, GAME_HEIGHT / 2, 255, 0, 0, 255);
 
-
-		//update the surface, because we have made all the necessary changes
-		//SDL_UpdateWindowSurface(window);
 		//printf("frame done");
 		frameCount++;
 		//printf("OVR AVG FPS: %d", 1000 * frameCount / SDL_GetTicks());
@@ -941,6 +971,15 @@ int main(int argc, char* args[]) {
 	SDL_FreeSurface(layerTwo);
 	
 	SDL_DestroyTexture(lightingTexture);
+
+	SDL_DestroyTexture(darknessTexture);
+
+	SDL_DestroyTexture(finalBuffer);
+
+	SDL_DestroyTexture(playerSubmarineTexture);
+
+	SDL_DestroyRenderer(renderer);
+
 	//Quit SDL subsystems
 	SDL_Quit();
 
