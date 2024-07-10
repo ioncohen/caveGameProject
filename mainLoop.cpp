@@ -4,16 +4,13 @@
 #include <ctime>
 #include <cstdlib>
 #include <string.h>
+#include <chrono>
 
 #define PI 3.14159265
 
 //THINGS TODO:
 //		fix input direction
-//		spiral lighting function
-//		Do some subpixel stuff to mke slow movement smoother. Not sure how, either draw everything with sprites and floats (but store the same) or maybe store higher resolution terrain, and do smaller steps while displaying or something.
-//			or both
-//		
-// 
+//
 // have the properties of the cave change with depth. then at the top have it spit out into just the ocean.
 //		Cave miner? add ore pockets to collect and/or enemies/monsters to fight/chase you somehow (by following your trails?)
 //		maybe different biomes where we blend two noise functions together?
@@ -48,6 +45,9 @@ SDL_Texture* lightingTexture = NULL;
 
 //Black texture to poke holes in and renderclear
 SDL_Texture* darknessTexture = NULL;
+
+//player submarine texture
+SDL_Texture* playerSubmarineTexture = NULL;
 
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
@@ -605,6 +605,18 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 //it might be time to split into multiple files
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
+void loadImages() {
+	SDL_Surface* imageSurface = SDL_LoadBMP("imageFiles/playerSubmarine.bmp");
+	if (imageSurface == NULL) {
+		printf("ERROR: Couldn't load playerSubmarine bmp\n");
+	}
+	playerSubmarineTexture = SDL_CreateTextureFromSurface(renderer, imageSurface);
+	if (playerSubmarineTexture == NULL) {
+		printf("ERROR: Couldn't create playerSubmarine texture from bmp");
+	}
+	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_BLEND);
+}
+
 SDL_Window *debugWindow = NULL;
 void initializeEverything() {
 	printf("initializing everything :)");
@@ -657,10 +669,17 @@ void initializeEverything() {
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
+
+	loadImages();
 }
 
 int main(int argc, char* args[]) {
 	
+	SDL_Rect subDestRect;
+	subDestRect.x = (GAME_WIDTH/2 - 7)*pixelSize;
+	subDestRect.y = (GAME_WIDTH/2 - 6)*pixelSize;
+	subDestRect.w = 10 * pixelSize;
+	subDestRect.h = 7 * pixelSize;
 	int frameCount = 0;
 	
 	initializeEverything();
@@ -683,6 +702,10 @@ int main(int argc, char* args[]) {
 	uint32_t prevTicks = -1000;
 	uint32_t lastNFrames[fpsWindowSize] = {};
 	
+	std::chrono::steady_clock::time_point oldTime = std::chrono::steady_clock::now();
+	std::chrono::steady_clock::time_point newTime;
+	std::chrono::steady_clock::duration frameTime;
+
 	while (!quit) {
 		//first thing we do in the loop is handle inputs
 		while (SDL_PollEvent(&event) != 0) {
@@ -783,20 +806,26 @@ int main(int argc, char* args[]) {
 		//int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
 		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 
-		float frameDelta = 1;
+		newTime = std::chrono::steady_clock::now();
+		frameTime = std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime);
+		oldTime = std::chrono::steady_clock::now();
+		//printf("frameMicros: %d\n", frameTime.count());
+
+		float frameDelta = frameTime.count()/2'000'000.0;
+		//printf("frameDelta: %f", frameDelta);
 		//float frameDelta = (SDL_GetTicks() - prevTicks)/2;
 		//if (frameDelta <= 0) { frameDelta = 1; }
 		//prevTicks = SDL_GetTicks();
 		
-		xSpeed += xAccel/frameDelta;
-		ySpeed += yAccel/frameDelta;
+		xSpeed += xAccel*frameDelta;
+		ySpeed += yAccel*frameDelta;
 
 		//TODO: figure out a way to frameDelta this
 		if (xAccel == 0) {
-			xSpeed *= 0.99;
+			xSpeed *= 1 - frameDelta/100;
 		}
 		if (yAccel == 0) {
-			ySpeed *= 0.99;
+			ySpeed *= 1 - frameDelta/100;
 		}
 
 		/*if (xSpeed > 0.9)
@@ -808,8 +837,8 @@ int main(int argc, char* args[]) {
 		int prevX = floor(playerX);
 		int prevY = floor(playerY);
 
-		playerX += xSpeed / frameDelta;
-		playerY += ySpeed / frameDelta;
+		playerX += xSpeed * frameDelta;
+		playerY += ySpeed * frameDelta;
 
 		//maybe we have to do it virtually.
 		//ok dont use bufferoffset, just use discrete x and y
@@ -890,9 +919,8 @@ int main(int argc, char* args[]) {
 		SDL_RenderClear(renderer);
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
-
+		SDL_RenderCopy(renderer, playerSubmarineTexture, NULL, &subDestRect);
 		//SDL_BlitSurface(layerTwo, NULL, windowSurface, NULL);
-		//SDL_RenderCopy(renderer, layer2Tex, NULL, NULL);
 		SDL_RenderPresent(renderer);
 		//setBigPixelNoOffset(GAME_WIDTH / 2, GAME_HEIGHT / 2, 255, 0, 0, 255);
 
