@@ -335,7 +335,10 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 					int x2 = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					if (!occluded[x2][y2]) {
-						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+						float dist = (i - lightSourceX) * (i - lightSourceX) + (j - lightSourceY) * (j - lightSourceY);
+						dist /= 300;
+						dist += 1;
+						SDL_SetRenderDrawColor(renderer, 255/dist, 255/dist, 255/dist, 255);
 						SDL_RenderFillRect(renderer, &block);
 					}
 				}
@@ -613,11 +616,13 @@ void loadImages() {
 	if (imageSurface == NULL) {
 		printf("ERROR: Couldn't load playerSubmarine bmp\n");
 	}
+	SDL_ConvertSurfaceFormat(imageSurface, SDL_PIXELFORMAT_RGB888, 0);
 	playerSubmarineTexture = SDL_CreateTextureFromSurface(renderer, imageSurface);
 	if (playerSubmarineTexture == NULL) {
 		printf("ERROR: Couldn't create playerSubmarine texture from bmp");
 	}
 	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureAlphaMod(playerSubmarineTexture, 150);
 }
 
 void initializeEverything() {
@@ -681,17 +686,22 @@ void initializeEverything() {
 
 int main(int argc, char* args[]) {
 	
+	const int viewportPad = 40;
+	const int vPadSpeedConstant = 200;
+
 	SDL_Rect subDestRect;
-	subDestRect.x = (GAME_WIDTH/2 - 7)*pixelSize;
-	subDestRect.y = (GAME_WIDTH/2 - 6)*pixelSize;
+	subDestRect.x = (GAME_WIDTH/2 - 5)*pixelSize;
+	subDestRect.y = (GAME_WIDTH/2 - 4)*pixelSize;
 	subDestRect.w = 10 * pixelSize;
 	subDestRect.h = 7 * pixelSize;
 	
 	SDL_Rect viewportRect;
-	viewportRect.x = 40;
-	viewportRect.y = 40;
-	viewportRect.w = SCREEN_WIDTH-80;
-	viewportRect.h = SCREEN_WIDTH-80;
+	viewportRect.x = viewportPad;
+	viewportRect.y = viewportPad;
+	viewportRect.w = SCREEN_WIDTH - (2 * viewportPad);
+	viewportRect.h = SCREEN_WIDTH - (2 * viewportPad);
+
+	SDL_RendererFlip charFlip = SDL_FLIP_NONE;
 	
 	int frameCount = 0;
 	
@@ -835,10 +845,10 @@ int main(int argc, char* args[]) {
 
 		//TODO: figure out a way to frameDelta this
 		if (xAccel == 0) {
-			xSpeed *= 1 - frameDelta/100;
+			xSpeed *= 1 - frameDelta/200;
 		}
 		if (yAccel == 0) {
-			ySpeed *= 1 - frameDelta/100;
+			ySpeed *= 1 - frameDelta/200;
 		}
 
 		/*if (xSpeed > 0.9)
@@ -912,19 +922,19 @@ int main(int argc, char* args[]) {
 
 		//calculate viewport lag
 		//first draft: base it on speed. TODO: replace this stuff with constants (the 20s, the 100)
-		viewportRect.x = 40 - xSpeed * 200;
-		viewportRect.y = 40 - ySpeed * 200;
+		viewportRect.x = viewportPad - xSpeed * vPadSpeedConstant;
+		viewportRect.y = viewportPad - ySpeed * vPadSpeedConstant;
 		if (viewportRect.x < 0) {
 			viewportRect.x = 0;
 		}
 		if (viewportRect.y < 0) {
 			viewportRect.y = 0;
 		}
-		if (viewportRect.x > 79) {
-			viewportRect.x = 79;
+		if (viewportRect.x > 2 * viewportPad - 1) {
+			viewportRect.x = 2 * viewportPad - 1;
 		}
-		if (viewportRect.y > 79) {
-			viewportRect.y = 79;
+		if (viewportRect.y > 2 * viewportPad - 1) {
+			viewportRect.y = 2 * viewportPad - 1;
 		}
 
 
@@ -945,11 +955,18 @@ int main(int argc, char* args[]) {
 		//Add lightingTexture to finalBuffer
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 
+		//Add submarine texture to finalBuffer
+		if (xSpeed > 0) {
+			charFlip = SDL_FLIP_NONE;
+		}
+		if (xSpeed < 0) {
+			charFlip = SDL_FLIP_HORIZONTAL;
+		}
+
+		SDL_RenderCopyEx(renderer, playerSubmarineTexture, NULL, &subDestRect, 0, NULL, charFlip);
+
 		//Add darkness texture to finalBuffer
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
-
-		//Add submarine texture to finalBuffer
-		SDL_RenderCopy(renderer, playerSubmarineTexture, NULL, &subDestRect);
 
 		//Now draw a portion of the window to the real place
 		SDL_SetRenderTarget(renderer, NULL);
