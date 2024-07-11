@@ -15,6 +15,8 @@
 //		Cave miner? add ore pockets to collect and/or enemies/monsters to fight/chase you somehow (by following your trails?)
 //		maybe different biomes where we blend two noise functions together?
 //		
+//		store submarine at a different scale? or make submarine buffer 10x larger.
+//		
 
 bool debugFlag = 0;
 
@@ -43,11 +45,23 @@ SDL_Renderer* renderer = NULL;
 //Texture to store the lighting falloff
 SDL_Texture* lightingTexture = NULL;
 
+//Texture to store the Strong flashlight
+SDL_Texture* flashLightingTexture = NULL;
+
+//Buffer for composing the lightmap
+SDL_Texture* lightingBuffer = NULL;
+
 //Black texture to poke holes in and renderclear
 SDL_Texture* darknessTexture = NULL;
 
 //player submarine texture
 SDL_Texture* playerSubmarineTexture = NULL;
+
+//submarine flashlight texture
+SDL_Texture* flashlightTexture = NULL;
+
+//submarine buffer texture
+SDL_Texture* submarineBuffer = NULL;
 
 //Final buffer before the actual screen
 SDL_Texture* finalBuffer = NULL;
@@ -336,9 +350,9 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 					int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					if (!occluded[x2][y2]) {
 						float dist = (i - lightSourceX) * (i - lightSourceX) + (j - lightSourceY) * (j - lightSourceY);
-						dist /= 300;
+						dist /= 80;
 						dist += 1;
-						SDL_SetRenderDrawColor(renderer, 255/dist, 255/dist, 255/dist, 255);
+						SDL_SetRenderDrawColor(renderer, 100/dist, 100/dist, 100/dist, 255);
 						SDL_RenderFillRect(renderer, &block);
 					}
 				}
@@ -407,8 +421,9 @@ void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
 //idea: optimize the spiral by checking if everything is occluded for 4 legs in a row. use ring buffer? or one int, edit with bitwise.
 //TODO: edit drawpixel to clamp inputs?
 //Controls brightness of the lighting texture. Higher is brighter/farther
-const float distanceScaleFactor = 100;
-void createLightingTexture() {
+
+//const float distanceScaleFactor = 10; for 
+SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMode bMode) {
 	//TODO: allow tis method to be used from any pt, not just center.
 	SDL_Surface* lightingSurface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA8888); //maybe remove alpha channel?
 	//SDL_SetSurfaceBlendMode(lightingSurface, SDL_BLENDMODE_ADD);
@@ -427,23 +442,17 @@ void createLightingTexture() {
 	//SDL_FillRect(lightingSurface, NULL, UINT32_MAX);
 
 
-	printf("Making the texture from the surface!!!");
-	lightingTexture = SDL_CreateTextureFromSurface(renderer, lightingSurface);
+	printf("Making lighting texture of brightness %f\n", distanceScaleFactor);
+	SDL_Texture* result = SDL_CreateTextureFromSurface(renderer, lightingSurface);
 	
-	if (lightingTexture == NULL) {
-		printf("CATASTROPHIC ERROR!!! TEXTURE CREATION FAILED");
+	if (result == NULL) {
+		printf("ERROR: Lighting texture creation failed");
 	}
 
-	int width = 0;
-	int height = 0;
-	Uint32 format = 0;
-	int access = 0;
-
-	SDL_QueryTexture(lightingTexture, &format, &access, &width, &height);
-	printf("format: (%d) | access: (%d) | width: (%d) | height (%d)", format, access, width, height);
-
 	SDL_FreeSurface(lightingSurface);
-	SDL_SetTextureBlendMode(lightingTexture, SDL_BLENDMODE_NONE);
+	SDL_SetTextureBlendMode(lightingTexture, bMode);
+
+	return result;
 }
 
 const int numRays = 360;
@@ -612,17 +621,37 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
 void loadImages() {
-	SDL_Surface* imageSurface = SDL_LoadBMP("imageFiles/playerSubmarine.bmp");
-	if (imageSurface == NULL) {
+	SDL_Surface* tempSurface;
+
+	//Load player Submarine sprite
+	tempSurface = SDL_LoadBMP("imageFiles/playerSubmarine.bmp");
+	if (tempSurface == NULL) {
 		printf("ERROR: Couldn't load playerSubmarine bmp\n");
 	}
-	SDL_ConvertSurfaceFormat(imageSurface, SDL_PIXELFORMAT_RGB888, 0);
-	playerSubmarineTexture = SDL_CreateTextureFromSurface(renderer, imageSurface);
+	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0); //maybe not necessary? who knows
+	playerSubmarineTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
 	if (playerSubmarineTexture == NULL) {
 		printf("ERROR: Couldn't create playerSubmarine texture from bmp");
 	}
-	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_BLEND);
+
+	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_NONE);
 	SDL_SetTextureAlphaMod(playerSubmarineTexture, 150);
+	SDL_FreeSurface(tempSurface);
+
+	//load flashlight sprite
+	tempSurface = SDL_LoadBMP("imageFiles/flashlight.bmp");
+	if (tempSurface == NULL) {
+		printf("ERROR: Couldn't load flashlight bmp\n");
+	}
+	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
+	flashlightTexture = SDL_CreateTextureFromSurface(renderer, tempSurface); //maybe draw in a different order?
+	if (flashlightTexture == NULL) {
+		printf("ERROR: Couldn't create flashlight texture from bmp");
+	}
+	SDL_SetTextureBlendMode(flashlightTexture, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureAlphaMod(flashlightTexture, 255);
+	SDL_FreeSurface(tempSurface);
+
 }
 
 void initializeEverything() {
@@ -630,6 +659,8 @@ void initializeEverything() {
 
 	//first, we initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
+
+	printf("numAlloc: %d\n", SDL_GetNumAllocations());
 
 	block.h = pixelSize;
 	block.w = pixelSize;
@@ -672,7 +703,7 @@ void initializeEverything() {
 		}
 	}
 
-	createLightingTexture();
+	lightingTexture = createLightingTexture(10, SDL_BLENDMODE_ADD);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -682,6 +713,17 @@ void initializeEverything() {
 	finalBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(finalBuffer, SDL_BLENDMODE_NONE);
 	SDL_SetRenderTarget(renderer, finalBuffer);
+
+	int width = 0;
+	int height = 0;
+	SDL_QueryTexture(playerSubmarineTexture, NULL, NULL, &width, &height);
+	submarineBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height);
+	SDL_SetTextureBlendMode(submarineBuffer, SDL_BLENDMODE_BLEND);
+
+	//not sure yet if i need this layer
+	//lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE);
 }
 
 int main(int argc, char* args[]) {
@@ -701,15 +743,31 @@ int main(int argc, char* args[]) {
 	viewportRect.w = SCREEN_WIDTH - (2 * viewportPad);
 	viewportRect.h = SCREEN_WIDTH - (2 * viewportPad);
 
+	//this will all have to change later
+	SDL_Rect flashlightPos;
+	flashlightPos.x = 6;
+	flashlightPos.y = 7;
+	flashlightPos.w = 4;
+	flashlightPos.h = 4;
+		
+
 	SDL_RendererFlip charFlip = SDL_FLIP_NONE;
 	
 	int frameCount = 0;
 	
 	initializeEverything();
 
-	//ok now we can start our main loop:
 	bool quit = false;
+
 	SDL_Event event;
+	
+	//mouse position variables
+	int xMouse = 0;
+	int yMouse = 0;
+
+	SDL_GetMouseState(&xMouse, &yMouse);
+
+	float mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT/2), xMouse - (SCREEN_WIDTH/2)) * 180 / 3.1415;
 
 	//bools to keep track of where/if we are accelerating
 	bool pushingLeft = false;
@@ -937,8 +995,11 @@ int main(int argc, char* args[]) {
 			viewportRect.y = 2 * viewportPad - 1;
 		}
 
+		SDL_GetMouseState(&xMouse, &yMouse);
 
+		mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT / 2), xMouse - (SCREEN_WIDTH / 2)) * 180 / 3.1415;
 
+		
 
 		//Clear real backBuffer
 		SDL_RenderClear(renderer);
@@ -946,16 +1007,27 @@ int main(int argc, char* args[]) {
 		//Poke holes in the darkness texture
 		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2);
 		
-		if (SDL_GetRenderTarget(renderer) == finalBuffer) {
-			printf("RENDERING TO FINAL BUFFER :)");
-		}
 		//Clear finalBuffer
 		SDL_RenderClear(renderer);
 
-		//Add lightingTexture to finalBuffer
+		//Compose lighting layer
+		SDL_RenderCopy(renderer, flashLightingTexture, NULL, NULL);
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+
+		//set up vertices for cutting the flashlight into a triangle.
+		float angleLeft = mouseAngle - 15;
+		float angleRight = mouseAngle + 15;
+		
+		//SDL_sinf
+
+		SDL_Vertex vertex_1 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
+		SDL_Vertex vertex_2 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
+		SDL_Vertex vertex_3 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
+
+		//SDL_RenderGeometry();
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 
-		//Add submarine texture to finalBuffer
+		//Now let's compose the submarine texture
 		if (xSpeed > 0) {
 			charFlip = SDL_FLIP_NONE;
 		}
@@ -963,7 +1035,14 @@ int main(int argc, char* args[]) {
 			charFlip = SDL_FLIP_HORIZONTAL;
 		}
 
-		SDL_RenderCopyEx(renderer, playerSubmarineTexture, NULL, &subDestRect, 0, NULL, charFlip);
+		SDL_SetRenderTarget(renderer, submarineBuffer);
+		SDL_RenderClear(renderer); //clear submarine buffer
+		SDL_RenderCopyEx(renderer, playerSubmarineTexture, NULL, NULL, 0, NULL, charFlip);
+		SDL_RenderCopyEx(renderer, flashlightTexture, NULL, &flashlightPos, mouseAngle, NULL, SDL_FLIP_NONE); //slap on the flashlight texture
+
+		//now the submarine texture is complete, so we can put it on the finalbuffer
+		SDL_SetRenderTarget(renderer, finalBuffer);
+		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
 
 		//Add darkness texture to finalBuffer
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
@@ -989,6 +1068,10 @@ int main(int argc, char* args[]) {
 	
 	SDL_DestroyTexture(lightingTexture);
 
+	SDL_DestroyTexture(flashLightingTexture);
+
+	SDL_DestroyTexture(lightingBuffer); //again, not sure if this is really necessary
+
 	SDL_DestroyTexture(darknessTexture);
 
 	SDL_DestroyTexture(finalBuffer);
@@ -997,6 +1080,7 @@ int main(int argc, char* args[]) {
 
 	SDL_DestroyRenderer(renderer);
 
+	printf("numAlloc: %d\n", SDL_GetNumAllocations());
 	//Quit SDL subsystems
 	SDL_Quit();
 
