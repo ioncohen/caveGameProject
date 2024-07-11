@@ -8,6 +8,9 @@
 
 #define PI 3.14159265
 
+const float toRad = 0.01745329251;
+const float toDeg = 57.2957795131;
+
 //THINGS TODO:
 //		fix input direction
 //
@@ -323,7 +326,7 @@ int clamp(int value) {
 //maybe redo the pixtraceback arrays to be one big array that returns a tuple. That way dont have to calculate the indexes 4 times.
 //how can we change the spiral to work with multiple light sources? it will already work with any light distnce.
 //we can use additive lighting to generate the lightmap background. but how to calculate occlusion from many sources? i guess we just have to double our work :(
-void rowByRowLighting(int lightSourceX, int lightSourceY) {
+void rowByRowLighting(int lightSourceX, int lightSourceY, float mouseAngle) {
 	memset(occluded, 0, sizeof occluded);
 
 	SDL_SetRenderTarget(renderer, darknessTexture);
@@ -349,11 +352,22 @@ void rowByRowLighting(int lightSourceX, int lightSourceY) {
 					int x2 = i + pixTraceBackDirX2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					int y2 = j + pixTraceBackDirY2[i - lightSourceX + GAME_WIDTH][j - lightSourceY + GAME_HEIGHT];
 					if (!occluded[x2][y2]) {
+						//in this case, we have hit a wall for the first time
 						float dist = (i - lightSourceX) * (i - lightSourceX) + (j - lightSourceY) * (j - lightSourceY);
 						dist /= 80;
-						dist += 1;
-						SDL_SetRenderDrawColor(renderer, 100/dist, 100/dist, 100/dist, 255);
-						SDL_RenderFillRect(renderer, &block);
+						//dist += 1;
+						
+						//check if we are in the angle
+						float pixAngle = atan2f(j - lightSourceY, i - lightSourceX)*toDeg;
+						
+						if (abs(pixAngle - mouseAngle) < 15 || abs(pixAngle + 360 - mouseAngle) < 15) {
+							SDL_SetRenderDrawColor(renderer, 255/(dist/6+1), 255/ (dist/6 + 1), 255/ (dist/6 + 1), 255);
+							SDL_RenderFillRect(renderer, &block);
+						}
+						else {
+							SDL_SetRenderDrawColor(renderer, 100 / (dist + 1), 100 / (dist + 1), 100 / (dist + 1), 255);
+							SDL_RenderFillRect(renderer, &block);
+						}
 					}
 				}
 				else {
@@ -450,7 +464,7 @@ SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMod
 	}
 
 	SDL_FreeSurface(lightingSurface);
-	SDL_SetTextureBlendMode(lightingTexture, bMode);
+	SDL_SetTextureBlendMode(result, bMode);
 
 	return result;
 }
@@ -703,7 +717,7 @@ void initializeEverything() {
 		}
 	}
 
-	lightingTexture = createLightingTexture(10, SDL_BLENDMODE_ADD);
+	lightingTexture = createLightingTexture(20, SDL_BLENDMODE_ADD);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -721,7 +735,7 @@ void initializeEverything() {
 	SDL_SetTextureBlendMode(submarineBuffer, SDL_BLENDMODE_BLEND);
 
 	//not sure yet if i need this layer
-	//lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+	lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, GAME_WIDTH, GAME_HEIGHT);
 
 	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE);
 }
@@ -802,11 +816,11 @@ int main(int argc, char* args[]) {
 						break;
 
 					case SDLK_UP:
-						pushingUp = true;
+						pushingDown = true;
 						break;
 
 					case SDLK_DOWN:
-						pushingDown = true;
+						pushingUp = true;
 						break;
 
 					case SDLK_LEFT:
@@ -827,11 +841,11 @@ int main(int argc, char* args[]) {
 						debugFlag = false;
 						break;
 					case SDLK_UP:
-						pushingUp = false;
+						pushingDown = false;
 						yAccel = 0;
 						break;
 					case SDLK_DOWN:
-						pushingDown = false;
+						pushingUp = false;
 						yAccel = 0;
 						break;
 					case SDLK_LEFT:
@@ -1005,27 +1019,40 @@ int main(int argc, char* args[]) {
 		SDL_RenderClear(renderer);
 
 		//Poke holes in the darkness texture
-		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
 		
 		//Clear finalBuffer
 		SDL_RenderClear(renderer);
 
 		//Compose lighting layer
+		SDL_SetRenderTarget(renderer, lightingBuffer);
 		SDL_RenderCopy(renderer, flashLightingTexture, NULL, NULL);
+		
+		
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 
 		//set up vertices for cutting the flashlight into a triangle.
 		float angleLeft = mouseAngle - 15;
 		float angleRight = mouseAngle + 15;
+
+		SDL_Vertex vertList[6];
+		vertList[0] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf(angleLeft * toRad)       ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleLeft * toRad)},      {0, 0, 0, 0}, {1, 1}};
+		vertList[1] = { {(GAME_WIDTH / 2) - GAME_WIDTH  * cosf(angleLeft * toRad)       ,  (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleLeft * toRad)},      {0, 0, 0, 0}, {1, 1} };
+		vertList[2] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf((angleLeft-90) * toRad)  ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleLeft-90) * toRad)}, {0, 0, 0, 0}, {1, 1} };
+
+		vertList[3] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleRight * toRad)       ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleRight * toRad)},      {0, 0, 0, 0}, {1, 1} };
+		vertList[4] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleRight * toRad)       ,  (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleRight * toRad)},      {0, 0, 0, 0}, {1, 1} };
+		vertList[5] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleRight + 90) * toRad)  ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleRight + 90) * toRad)}, {0, 0, 0, 0}, {1, 1} };
+
+
+
+		SDL_RenderGeometry(renderer, NULL, vertList, 6, NULL, 0);
 		
-		//SDL_sinf
-
-		SDL_Vertex vertex_1 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
-		SDL_Vertex vertex_2 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
-		SDL_Vertex vertex_3 = { {10, 10}, {255, 0, 0, 255}, {1, 1} };
-
-		//SDL_RenderGeometry();
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+		
+		SDL_SetRenderTarget(renderer, finalBuffer);
+
+		SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
 
 		//Now let's compose the submarine texture
 		if (xSpeed > 0) {
