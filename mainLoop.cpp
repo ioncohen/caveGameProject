@@ -731,7 +731,7 @@ void initializeEverything() {
 	int width = 0;
 	int height = 0;
 	SDL_QueryTexture(playerSubmarineTexture, NULL, NULL, &width, &height);
-	submarineBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height);
+	submarineBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, pixelSize*width, pixelSize*height);
 	SDL_SetTextureBlendMode(submarineBuffer, SDL_BLENDMODE_BLEND);
 
 	//not sure yet if i need this layer
@@ -759,10 +759,10 @@ int main(int argc, char* args[]) {
 
 	//this will all have to change later
 	SDL_Rect flashlightPos;
-	flashlightPos.x = 6;
-	flashlightPos.y = 7;
-	flashlightPos.w = 4;
-	flashlightPos.h = 4;
+	flashlightPos.x = 6*pixelSize;
+	flashlightPos.y = 7*pixelSize;
+	flashlightPos.w = 4*pixelSize;
+	flashlightPos.h = 4*pixelSize;
 		
 
 	SDL_RendererFlip charFlip = SDL_FLIP_NONE;
