@@ -18,7 +18,9 @@ const float toDeg = 57.2957795131;
 //		Cave miner? add ore pockets to collect and/or enemies/monsters to fight/chase you somehow (by following your trails?)
 //		maybe different biomes where we blend two noise functions together?
 //		
-//		store submarine at a different scale? or make submarine buffer 10x larger.
+//		
+// 
+// 
 //		
 
 bool debugFlag = 0;
@@ -738,6 +740,8 @@ void initializeEverything() {
 	lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, GAME_WIDTH, GAME_HEIGHT);
 
 	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE);
+
+	//SDL_ShowCursor(SDL_DISABLE);
 }
 
 int main(int argc, char* args[]) {
@@ -801,6 +805,7 @@ int main(int argc, char* args[]) {
 	std::chrono::steady_clock::time_point newTime;
 	std::chrono::steady_clock::duration frameTime;
 
+	//MAIN LOOP!!!
 	while (!quit) {
 		//first thing we do in the loop is handle inputs
 		while (SDL_PollEvent(&event) != 0) {
@@ -923,14 +928,10 @@ int main(int argc, char* args[]) {
 			ySpeed *= 1 - frameDelta/200;
 		}
 
-		/*if (xSpeed > 0.9)
-			xSpeed = 0.9;
-		if (ySpeed > 0.9)
-			ySpeed = 0.9;
-		*/
-
 		int prevX = floor(playerX);
 		int prevY = floor(playerY);
+
+
 
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
@@ -1013,6 +1014,89 @@ int main(int argc, char* args[]) {
 
 		mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT / 2), xMouse - (SCREEN_WIDTH / 2)) * 180 / 3.1415;
 
+		//Collision detection
+		//Use subdestRec
+		//caveTerrin holds screen coordinates
+		short flatDir = 0;
+		short cornerDir = 0;
+		if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT right\n");
+			flatDir = 1;
+		} else	if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT top\n");
+			flatDir = 2;
+		} else if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT bottom\n");
+			flatDir = 4;
+		} else if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT left\n");
+			flatDir = 3;
+		}
+		
+		if (flatDir == 0){
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT bottom right\n");
+				cornerDir = 4;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT top right\n");
+				cornerDir = 1;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT bottom left\n");
+				cornerDir = 3;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT top left\n");
+				cornerDir = 2;
+			}
+		}
+
+		if (flatDir | cornerDir) {
+			float temp = xSpeed;
+			//undo the last movement
+			playerX -= xSpeed * frameDelta;
+			playerY -= ySpeed * frameDelta;
+			
+			switch(flatDir){
+			case 1:
+				xSpeed = -xSpeed / 2;
+				break;
+			case 2:
+				ySpeed = -ySpeed / 2;
+				break;
+			case 3:
+				xSpeed = -xSpeed / 2;
+				break;
+			case 4:
+				ySpeed = -ySpeed / 2;
+				break;
+			case 0:
+				temp = xSpeed;
+				switch (cornerDir) {
+				case 1: 
+					xSpeed = ySpeed/2;
+					ySpeed = temp/2;
+					break;
+				case 2:
+					xSpeed = -ySpeed/2;
+					ySpeed = -temp / 2;
+					break;
+				case 3:
+					xSpeed = ySpeed / 2;
+					ySpeed = -temp / 2;
+					break;
+				case 4:
+					xSpeed = ySpeed / 2;
+					ySpeed = -temp / 2;
+					break;
+				}
+				break;
+			default:
+				break;
+			}
+			printf("collision!!!\n");
+		}
 		
 
 		//Clear real backBuffer
@@ -1028,7 +1112,6 @@ int main(int argc, char* args[]) {
 		SDL_SetRenderTarget(renderer, lightingBuffer);
 		SDL_RenderCopy(renderer, flashLightingTexture, NULL, NULL);
 		
-		
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 
 		//set up vertices for cutting the flashlight into a triangle.
@@ -1036,15 +1119,13 @@ int main(int argc, char* args[]) {
 		float angleRight = mouseAngle + 15;
 
 		SDL_Vertex vertList[6];
-		vertList[0] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf(angleLeft * toRad)       ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleLeft * toRad)},      {0, 0, 0, 0}, {1, 1}};
-		vertList[1] = { {(GAME_WIDTH / 2) - GAME_WIDTH  * cosf(angleLeft * toRad)       ,  (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleLeft * toRad)},      {0, 0, 0, 0}, {1, 1} };
-		vertList[2] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf((angleLeft-90) * toRad)  ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleLeft-90) * toRad)}, {0, 0, 0, 0}, {1, 1} };
+		vertList[0] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
+		vertList[1] = { {(GAME_WIDTH / 2) - GAME_WIDTH  * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
+		vertList[2] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf((angleLeft - 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleLeft - 90) * toRad)}  ,  {0, 0, 0, 0}, {1, 1} };
 
-		vertList[3] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleRight * toRad)       ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleRight * toRad)},      {0, 0, 0, 0}, {1, 1} };
-		vertList[4] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleRight * toRad)       ,  (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleRight * toRad)},      {0, 0, 0, 0}, {1, 1} };
-		vertList[5] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleRight + 90) * toRad)  ,  (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleRight + 90) * toRad)}, {0, 0, 0, 0}, {1, 1} };
-
-
+		vertList[3] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
+		vertList[4] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
+		vertList[5] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleRight + 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleRight + 90) * toRad)} ,  {0, 0, 0, 0}, {1, 1} };
 
 		SDL_RenderGeometry(renderer, NULL, vertList, 6, NULL, 0);
 		
@@ -1105,11 +1186,16 @@ int main(int argc, char* args[]) {
 
 	SDL_DestroyTexture(playerSubmarineTexture);
 
+	SDL_DestroyTexture(flashlightTexture);
+
+	SDL_DestroyTexture(submarineBuffer);
+
 	SDL_DestroyRenderer(renderer);
 
 	printf("numAlloc: %d\n", SDL_GetNumAllocations());
 	//Quit SDL subsystems
 	SDL_Quit();
 
+	printf("numAlloc: %d\n", SDL_GetNumAllocations());
 	return 0;
 }
