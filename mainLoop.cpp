@@ -633,6 +633,88 @@ void handleLighting(int lightSourceX, int lightSourceY) {
 	//printf("finishedDisplaying the spiral :)!!!!");
 }
 
+//Takes in world positions, returns a slope (in 45 steps) if you are colliding, 0 if not?
+int marchingSlope(float x, float y) {
+	//maybe change thid to use the cT buffer instead
+	//abcd = bot left, bot right, top left, top right (in imaginary world)
+	int ax = floor(x);
+	int ay = floor(y);
+
+	int bx = floor(x) + 1;
+	int by = floor(y);
+
+	int cx = floor(x);
+	int cy = floor(y) + 1;
+
+	int dx = floor(x) + 1;
+	int dy = floor(y) + 1;
+
+	//replace with a more dedicated noise function?
+	short checkA = SimplexNoise::noise(ax / noiseScaleFactor, ay / noiseScaleFactor) <= noiseCutoffLevel;
+	short checkB = SimplexNoise::noise(bx / noiseScaleFactor, by / noiseScaleFactor) <= noiseCutoffLevel;
+	short checkC = SimplexNoise::noise(cx / noiseScaleFactor, cy / noiseScaleFactor) <= noiseCutoffLevel;
+	short checkD = SimplexNoise::noise(dx / noiseScaleFactor, dy / noiseScaleFactor) <= noiseCutoffLevel;
+
+	short cornerMask = checkA << 3 | checkB << 2 | checkC << 1 | checkD;
+
+	switch (cornerMask) {
+	case 0:
+		//no terrain in this square
+		return 0;
+	case 1:
+		//D only, top right only.
+		// line goes from top to right.
+		return (x - ax + y - ay > 1.5) * (cornerMask);
+	case 2:
+		// C only, top left only
+		return (dx - x + y - ay > 1.5) * (cornerMask);
+	case 3:
+		//C and D: top left and top right;
+		return (y - ay > 0.5) * (cornerMask);
+	case 4:
+		//bot right only?
+		//	line goes from bot to right.
+		return (x - ax + dy - y > 1.5) * (cornerMask);
+	case 5:
+		//0101
+		// B and D: bot right, top right
+		//
+		return (x - ax > 0.5)*(cornerMask);
+	case 9:
+	case 6:
+		//0110: B and C: bot right, top left)
+		printf("error: messed up geometry");
+		return -1;
+	case 7:
+		//0111: BCD, all but bot left
+		return(x - ax + y - ax > 0.5)*(cornerMask);
+	case 8:
+		//1000: A only
+		return (dx - x + dy - y > 1.5)*(cornerMask);
+	case 10:
+		//1010: A and C
+		return (x - ax < 0.5)*(cornerMask);
+	case 11:
+		//1011 all but B
+		return (dx - x + y - ay > 0.5)*(cornerMask);
+	case 12:
+		//1100 A and B
+		return (y - ay < 0.5)*(cornerMask);
+	case 13:
+		//1101 all but C
+		return (x - ax + dy - y > 0.5) * (cornerMask);
+	case 14:
+		//1110 all but D
+		return (x - ax + y - ay < 1.5) * (cornerMask);
+	case 15:
+		//1111 add
+		//printf("error: messed up geometry (deep collision) \n");
+		return -1;
+	}	
+	printf("error: marching squares no case?");
+	return -1;
+}
+
 //it might be time to split into multiple files
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
@@ -816,19 +898,19 @@ int main(int argc, char* args[]) {
 					case SDLK_0:
 						debugFlag = 1;
 						break;
-
+					case SDLK_w:
 					case SDLK_UP:
 						pushingDown = true;
 						break;
-
+					case SDLK_s:
 					case SDLK_DOWN:
 						pushingUp = true;
 						break;
-
+					case SDLK_a:
 					case SDLK_LEFT:
 						pushingLeft = true;
 						break;
-
+					case SDLK_d:
 					case SDLK_RIGHT:
 						pushingRight = true;
 						break;
@@ -842,18 +924,22 @@ int main(int argc, char* args[]) {
 					case SDLK_0:
 						debugFlag = false;
 						break;
+					case SDLK_w:
 					case SDLK_UP:
 						pushingDown = false;
 						yAccel = 0;
 						break;
+					case SDLK_s:
 					case SDLK_DOWN:
 						pushingUp = false;
 						yAccel = 0;
 						break;
+					case SDLK_a:
 					case SDLK_LEFT:
 						pushingLeft = false;
 						xAccel = 0;
 						break;
+					case SDLK_d:
 					case SDLK_RIGHT:
 						pushingRight = false;
 						xAccel = 0;
@@ -931,102 +1017,55 @@ int main(int argc, char* args[]) {
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
 
+		int collisionCheck = marchingSlope(playerX + GAME_WIDTH / 2, playerY + GAME_WIDTH / 2);
+		if (collisionCheck > 0) {
+			//abcd = bot left, bot right, top left, top right (in imaginary world)
+			//ok there's been a collision
+			printf("%d ", collisionCheck);
+			//undo previous movement. Now we are guaranteed (?) to be in open space
+			playerX -=   xSpeed * frameDelta;
+			playerY -=  ySpeed * frameDelta;
+			
+			printf("before vx,vy = %f, %f\n",xSpeed, ySpeed);
+			float temp = xSpeed;
+			switch (collisionCheck) {
+			case 1:
+			case 7:
+			case 8:
+			case 14:
+				xSpeed = -2 * ySpeed / 3;
+				ySpeed = -2 * temp / 3;
+				break;
+			case 13:
+			case 11:
+			case 4:
+			case 2:
+				xSpeed = 2 * ySpeed / 3;
+				ySpeed = 2 * temp / 3;
+				break;
+			case 12:
+			case 3:
+				xSpeed = 3 * xSpeed / 4;
+				ySpeed = -2 * ySpeed / 3;
+				break;
+			case 10:
+			case 5:
+				printf("sus case");
+				xSpeed = -2 * xSpeed / 3;
+				ySpeed = 3 * ySpeed / 4;
+				break;
+			case 9:
+			case 6:
+			case 15:
+				printf("errer");
+				break;
+			}
+			printf("after vx,vy = %f, %f\n", xSpeed, ySpeed);
+		}
+
+
 		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
 		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
-
-		//Collision detection
-		//Use subdestRec
-		//caveTerrin holds screen coordinates
-		short flatDir = 0;
-		short cornerDir = 0;
-		if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT right\n");
-			flatDir = 1;
-		}
-		else	if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT top\n");
-			flatDir = 2;
-		}
-		else if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT bottom\n");
-			flatDir = 4;
-		}
-		else if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT left\n");
-			flatDir = 3;
-		}
-
-		if (flatDir == 0) {
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT bottom right\n");
-				cornerDir = 4;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT top right\n");
-				cornerDir = 1;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT bottom left\n");
-				cornerDir = 3;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT top left\n");
-				cornerDir = 2;
-			}
-		}
-
-		if (flatDir | cornerDir) {
-			float temp = xSpeed;
-			//undo the last movement
-			playerX -= xSpeed;
-			playerY -= ySpeed;
-			xSpeed = 0;
-			ySpeed = 0;
-			/*
-			switch(flatDir){
-			case 1:
-				xSpeed = -xSpeed / 2;
-				break;
-			case 2:
-				ySpeed = -ySpeed / 2;
-				break;
-			case 3:
-				xSpeed = -xSpeed / 2;
-				break;
-			case 4:
-				ySpeed = -ySpeed / 2;
-				break;
-			case 0:
-				temp = xSpeed;
-				switch (cornerDir) {
-				case 1:
-					xSpeed = ySpeed/2;
-					ySpeed = temp/2;
-					break;
-				case 2:
-					xSpeed = -ySpeed/2;
-					ySpeed = -temp / 2;
-					break;
-				case 3:
-					xSpeed = ySpeed / 2;
-					ySpeed = -temp / 2;
-					break;
-				case 4:
-					xSpeed = ySpeed / 2;
-					ySpeed = -temp / 2;
-					break;
-				}
-				break;
-			default:
-				break;
-			}
-			printf("collision!!!\n");
-			*/
-			
-		}
-
-		//playerX += xSpeed * frameDelta;
-		//playerY += ySpeed * frameDelta;
 
 		//maybe we have to do it virtually.
 		//ok dont use bufferoffset, just use discrete x and y
