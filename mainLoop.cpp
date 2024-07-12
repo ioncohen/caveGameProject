@@ -793,9 +793,6 @@ int main(int argc, char* args[]) {
 	bool pushingRight = false;
 	bool pushingDown = false;
 
-	int prevBufferOffsetX = 0;
-	int prevBufferOffsetY = 0;
-
 	const int fpsWindowSize = 100;
 
 	uint32_t prevTicks = -1000;
@@ -904,7 +901,7 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		//int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 
 		newTime = std::chrono::steady_clock::now();
 		frameTime = std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime);
@@ -931,24 +928,120 @@ int main(int argc, char* args[]) {
 		int prevX = floor(playerX);
 		int prevY = floor(playerY);
 
-
-
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
 
+		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
+		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
+
+		//Collision detection
+		//Use subdestRec
+		//caveTerrin holds screen coordinates
+		short flatDir = 0;
+		short cornerDir = 0;
+		if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT right\n");
+			flatDir = 1;
+		}
+		else	if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT top\n");
+			flatDir = 2;
+		}
+		else if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT bottom\n");
+			flatDir = 4;
+		}
+		else if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
+			printf("HIT left\n");
+			flatDir = 3;
+		}
+
+		if (flatDir == 0) {
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT bottom right\n");
+				cornerDir = 4;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT top right\n");
+				cornerDir = 1;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT bottom left\n");
+				cornerDir = 3;
+			}
+			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
+				printf("HIT top left\n");
+				cornerDir = 2;
+			}
+		}
+
+		if (flatDir | cornerDir) {
+			float temp = xSpeed;
+			//undo the last movement
+			playerX -= xSpeed;
+			playerY -= ySpeed;
+			xSpeed = 0;
+			ySpeed = 0;
+			/*
+			switch(flatDir){
+			case 1:
+				xSpeed = -xSpeed / 2;
+				break;
+			case 2:
+				ySpeed = -ySpeed / 2;
+				break;
+			case 3:
+				xSpeed = -xSpeed / 2;
+				break;
+			case 4:
+				ySpeed = -ySpeed / 2;
+				break;
+			case 0:
+				temp = xSpeed;
+				switch (cornerDir) {
+				case 1:
+					xSpeed = ySpeed/2;
+					ySpeed = temp/2;
+					break;
+				case 2:
+					xSpeed = -ySpeed/2;
+					ySpeed = -temp / 2;
+					break;
+				case 3:
+					xSpeed = ySpeed / 2;
+					ySpeed = -temp / 2;
+					break;
+				case 4:
+					xSpeed = ySpeed / 2;
+					ySpeed = -temp / 2;
+					break;
+				}
+				break;
+			default:
+				break;
+			}
+			printf("collision!!!\n");
+			*/
+			
+		}
+
+		//playerX += xSpeed * frameDelta;
+		//playerY += ySpeed * frameDelta;
+
 		//maybe we have to do it virtually.
 		//ok dont use bufferoffset, just use discrete x and y
-
-		int prevBufferOffsetX = bufferOffsetX;
-		int prevBufferOffsetY = bufferOffsetY;
 
 		//calculate new bufferOffset from player position
 		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
 		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
 
 		//ok now need buffer fill direction.
-		int bufferDirectionX = (xSpeed >= 0) - (xSpeed < 0);
-		int bufferDirectionY = (ySpeed >= 0) - (ySpeed < 0);
+		int bufferDirectionX = (playerX - prevX >= 0) - (playerX - prevX < 0);
+		int bufferDirectionY = (playerY - prevY >= 0) - (playerY - prevY < 0);
+		
+		// old way of determining this, that worked for everything except surprise collisions, which changed speed.
+		//int bufferDirectionX = (xSpeed >= 0) - (xSpeed < 0);
+		//int bufferDirectionY = (ySpeed >= 0) - (ySpeed < 0);
 
 		int numNewLinesX = abs(floor(playerX) - prevX);
 		int numNewLinesY = abs(floor(playerY) - prevY);
@@ -1013,90 +1106,6 @@ int main(int argc, char* args[]) {
 		SDL_GetMouseState(&xMouse, &yMouse);
 
 		mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT / 2), xMouse - (SCREEN_WIDTH / 2)) * 180 / 3.1415;
-
-		//Collision detection
-		//Use subdestRec
-		//caveTerrin holds screen coordinates
-		short flatDir = 0;
-		short cornerDir = 0;
-		if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT right\n");
-			flatDir = 1;
-		} else	if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT top\n");
-			flatDir = 2;
-		} else if (!caveTerrain[ringMod(GAME_WIDTH / 2 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT bottom\n");
-			flatDir = 4;
-		} else if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + bufferOffsetY, GAME_HEIGHT)]) {
-			printf("HIT left\n");
-			flatDir = 3;
-		}
-		
-		if (flatDir == 0){
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT bottom right\n");
-				cornerDir = 4;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 + 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT top right\n");
-				cornerDir = 1;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 + 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT bottom left\n");
-				cornerDir = 3;
-			}
-			if (!caveTerrain[ringMod(GAME_WIDTH / 2 - 3 + bufferOffsetX, GAME_WIDTH)][ringMod(GAME_HEIGHT / 2 - 2 + bufferOffsetY, GAME_HEIGHT)]) {
-				printf("HIT top left\n");
-				cornerDir = 2;
-			}
-		}
-
-		if (flatDir | cornerDir) {
-			float temp = xSpeed;
-			//undo the last movement
-			playerX -= xSpeed * frameDelta;
-			playerY -= ySpeed * frameDelta;
-			
-			switch(flatDir){
-			case 1:
-				xSpeed = -xSpeed / 2;
-				break;
-			case 2:
-				ySpeed = -ySpeed / 2;
-				break;
-			case 3:
-				xSpeed = -xSpeed / 2;
-				break;
-			case 4:
-				ySpeed = -ySpeed / 2;
-				break;
-			case 0:
-				temp = xSpeed;
-				switch (cornerDir) {
-				case 1: 
-					xSpeed = ySpeed/2;
-					ySpeed = temp/2;
-					break;
-				case 2:
-					xSpeed = -ySpeed/2;
-					ySpeed = -temp / 2;
-					break;
-				case 3:
-					xSpeed = ySpeed / 2;
-					ySpeed = -temp / 2;
-					break;
-				case 4:
-					xSpeed = ySpeed / 2;
-					ySpeed = -temp / 2;
-					break;
-				}
-				break;
-			default:
-				break;
-			}
-			printf("collision!!!\n");
-		}
 		
 
 		//Clear real backBuffer
