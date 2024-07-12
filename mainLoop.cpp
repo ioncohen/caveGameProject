@@ -687,7 +687,7 @@ int marchingSlope(float x, float y) {
 		return -1;
 	case 7:
 		//0111: BCD, all but bot left
-		return(x - ax + y - ax > 0.5)*(cornerMask);
+		return(x - ax + y - ay > 0.5)*(cornerMask);
 	case 8:
 		//1000: A only
 		return (dx - x + dy - y > 1.5)*(cornerMask);
@@ -708,7 +708,7 @@ int marchingSlope(float x, float y) {
 		return (x - ax + y - ay < 1.5) * (cornerMask);
 	case 15:
 		//1111 add
-		//printf("error: messed up geometry (deep collision) \n");
+		printf("error: messed up geometry (deep collision) \n");
 		return -1;
 	}	
 	printf("error: marching squares no case?");
@@ -1018,6 +1018,7 @@ int main(int argc, char* args[]) {
 		playerY += ySpeed * frameDelta;
 
 		int collisionCheck = marchingSlope(playerX + GAME_WIDTH / 2, playerY + GAME_WIDTH / 2);
+		if (collisionCheck == -1) { printf("error! deep collision"); quit = 1; }
 		if (collisionCheck > 0) {
 			//abcd = bot left, bot right, top left, top right (in imaginary world)
 			//ok there's been a collision
@@ -1026,7 +1027,6 @@ int main(int argc, char* args[]) {
 			playerX -=   xSpeed * frameDelta;
 			playerY -=  ySpeed * frameDelta;
 			
-			printf("before vx,vy = %f, %f\n",xSpeed, ySpeed);
 			float temp = xSpeed;
 			switch (collisionCheck) {
 			case 1:
@@ -1060,7 +1060,6 @@ int main(int argc, char* args[]) {
 				printf("errer");
 				break;
 			}
-			printf("after vx,vy = %f, %f\n", xSpeed, ySpeed);
 		}
 
 
