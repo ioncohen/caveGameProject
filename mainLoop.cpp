@@ -830,6 +830,9 @@ int main(int argc, char* args[]) {
 	
 	const int viewportPad = 40;
 	const int vPadSpeedConstant = 200;
+	
+	//portion of speed remaining after collision 
+	const float bumpFactor = 0.25;
 
 	SDL_Rect subDestRect;
 	subDestRect.x = (GAME_WIDTH/2 - 5)*pixelSize;
@@ -883,6 +886,8 @@ int main(int argc, char* args[]) {
 	std::chrono::steady_clock::time_point oldTime = std::chrono::steady_clock::now();
 	std::chrono::steady_clock::time_point newTime;
 	std::chrono::steady_clock::duration frameTime;
+
+	int redSlider = 0;
 
 	//MAIN LOOP!!!
 	while (!quit) {
@@ -1017,51 +1022,62 @@ int main(int argc, char* args[]) {
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
 
-		int collisionCheck = marchingSlope(playerX + GAME_WIDTH / 2, playerY + GAME_WIDTH / 2);
-		if (collisionCheck == -1) { printf("error! deep collision"); quit = 1; }
-		if (collisionCheck > 0) {
-			//abcd = bot left, bot right, top left, top right (in imaginary world)
-			//ok there's been a collision
-			printf("%d ", collisionCheck);
-			//undo previous movement. Now we are guaranteed (?) to be in open space
-			playerX -=   xSpeed * frameDelta;
-			playerY -=  ySpeed * frameDelta;
-			
-			float temp = xSpeed;
-			switch (collisionCheck) {
-			case 1:
-			case 7:
-			case 8:
-			case 14:
-				xSpeed = -2 * ySpeed / 3;
-				ySpeed = -2 * temp / 3;
-				break;
-			case 13:
-			case 11:
-			case 4:
-			case 2:
-				xSpeed = 2 * ySpeed / 3;
-				ySpeed = 2 * temp / 3;
-				break;
-			case 12:
-			case 3:
-				xSpeed = 3 * xSpeed / 4;
-				ySpeed = -2 * ySpeed / 3;
-				break;
-			case 10:
-			case 5:
-				printf("sus case");
-				xSpeed = -2 * xSpeed / 3;
-				ySpeed = 3 * ySpeed / 4;
-				break;
-			case 9:
-			case 6:
-			case 15:
-				printf("errer");
-				break;
+		int collisionCheck = 0;
+		float temp = xSpeed;
+
+		//loop thru 4 corners
+		for (int i = -2; i <= 2; i += 4) {
+			for (int j = -2; j <= 2; j += 4) {
+				collisionCheck = marchingSlope(playerX + i +  GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
+				if (collisionCheck > 0) {
+					goto collided;
+				}
 			}
 		}
-
+		goto notCollided;
+		collided:
+		if (collisionCheck == -1) { printf("error! deep collision"); quit = 1; }
+		//abcd = bot left, bot right, top left, top right (in imaginary world)
+		//ok there's been a collision
+		printf("%d ", collisionCheck);
+		//undo previous movement. Now we are guaranteed (?) to be in open space
+		playerX -=   xSpeed * frameDelta;
+		playerY -=  ySpeed * frameDelta;
+		
+		switch (collisionCheck) {
+		case 1:
+		case 7:
+		case 8:
+		case 14:
+			xSpeed = -ySpeed * bumpFactor;
+			ySpeed = -temp * bumpFactor;
+			break;
+		case 13:
+		case 11:
+		case 4:
+		case 2:
+			xSpeed = ySpeed * bumpFactor;
+			ySpeed = temp * bumpFactor;
+			break;
+		case 12:
+		case 3:
+			xSpeed = xSpeed * 2 * bumpFactor;
+			ySpeed = -ySpeed * bumpFactor;
+			break;
+		case 10:
+		case 5:
+			printf("sus case");
+			xSpeed = -xSpeed * bumpFactor;
+			ySpeed = ySpeed * 2* bumpFactor;
+			break;
+		case 9:
+		case 6:
+		case 15:
+			printf("errer");
+			break;
+		}
+		
+		notCollided:
 
 		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
 		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
@@ -1206,6 +1222,25 @@ int main(int argc, char* args[]) {
 		SDL_SetRenderTarget(renderer, NULL);
 		SDL_RenderClear(renderer);
 		SDL_RenderCopy(renderer, finalBuffer, &viewportRect, NULL);
+
+		//Now draw extra effects like red danger filter:
+		if (collisionCheck > 0) {
+			redSlider = 150;
+		}
+		else {
+			redSlider -= 1;
+			if (redSlider < 0) {
+				redSlider = 0;
+			}
+		}
+		if (redSlider > 0) {
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+			SDL_SetRenderDrawColor(renderer, 255, 0, 0, redSlider);
+			SDL_RenderFillRect(renderer, NULL);
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+		}
+
+
 		SDL_RenderPresent(renderer);
 
 		//printf("frame done");
