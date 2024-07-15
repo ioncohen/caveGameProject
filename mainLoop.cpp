@@ -71,6 +71,11 @@ SDL_Texture* submarineBuffer = NULL;
 //Final buffer before the actual screen
 SDL_Texture* finalBuffer = NULL;
 
+SDL_Texture* bubbleTexture = NULL;
+
+//texture to store the bars
+SDL_Texture* metersTexture = NULL;
+
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
 float playerX = 0;
@@ -90,7 +95,29 @@ int bufferOffsetY = 0;
 int subPixelOffsetX = 0;
 int subPixelOffsetY = 0;
 
-//mod method that works better with negative numbers
+
+struct bubble {
+	//pos
+	float x;
+	float y;
+
+	//spd
+	float xSpd;
+	float ySpd;
+
+	//time in milliseconds when the bubble pops
+	Uint32 popTime;
+};
+
+//returns 1 if open water, 0 if cave?
+bool caveNoise(float x, float y) {
+	//generate the width modifier from y value.
+	float caveWidth = 0.6 - y / 500;
+	//return the noise check
+	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + caveWidth > noiseCutoffLevel;
+}
+
+//mod method that loops around for negative numbers
 int ringMod(int a, int b) {
 	if (a >= 0) {
 		return a % b;
@@ -750,6 +777,33 @@ void loadImages() {
 	SDL_SetTextureAlphaMod(flashlightTexture, 255);
 	SDL_FreeSurface(tempSurface);
 
+	//load bubble sprite
+	tempSurface = SDL_LoadBMP("imageFiles/bubble.bmp");
+	if (tempSurface == NULL) {
+		printf("ERROR: Couldn't load bubble bmp\n");
+	}
+	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
+	bubbleTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
+	if (bubbleTexture == NULL) {
+		printf("ERROR: Couldnt create bubble texture from bmp");
+	}
+	SDL_SetTextureBlendMode(bubbleTexture, SDL_BLENDMODE_MUL);
+	SDL_SetTextureAlphaMod(bubbleTexture, 0);
+	SDL_FreeSurface(tempSurface);
+
+	//load meters sprite
+	tempSurface = SDL_LoadBMP("imageFiles/meters.bmp");
+	if (tempSurface == NULL) {
+		printf("ERROR: Couldn't load meters bmp");
+	}
+	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
+	metersTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
+	if (metersTexture == NULL) {
+		printf("ERROR: Couldn't create meters texture from bmp");
+	}
+	SDL_SetTextureBlendMode(metersTexture, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureAlphaMod(metersTexture, 255);
+	SDL_FreeSurface(tempSurface);
 }
 
 void initializeEverything() {
@@ -801,7 +855,7 @@ void initializeEverything() {
 		}
 	}
 
-	lightingTexture = createLightingTexture(20, SDL_BLENDMODE_ADD);
+	lightingTexture = createLightingTexture(40, SDL_BLENDMODE_ADD);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -827,7 +881,17 @@ void initializeEverything() {
 }
 
 int main(int argc, char* args[]) {
+	//gameplay variables
+	const int airCapacity = 100;
+	float airRemaining = 86;
 	
+	const int powerCapacity = 100;
+	float powerRemaining = 43;
+
+	const int healthCapacity = 100;
+	float healthRemaining = 60;
+
+	//variables for padding around screen for camera lag
 	const int viewportPad = 40;
 	const int vPadSpeedConstant = 200;
 	
@@ -887,10 +951,28 @@ int main(int argc, char* args[]) {
 	std::chrono::steady_clock::time_point newTime;
 	std::chrono::steady_clock::duration frameTime;
 
-	int redSlider = 0;
+	float redSlider = 0;
+
+	//index of oldest bubble
+	int bQFront = 0;
+	//index of newest bubble
+	int bQEnd = 0;
+	bubble bubbleQueue[100] = {};
+
+	bool tickChange = 1;
+	Uint32 lastTickChange = SDL_GetTicks();
+	//length of a tick in milliseconds
+	const Uint32 tickLength = 50;
 
 	//MAIN LOOP!!!
 	while (!quit) {
+		if (SDL_GetTicks() - lastTickChange > tickLength) {
+			tickChange = 1;
+			lastTickChange = SDL_GetTicks();
+		}
+		else {
+			tickChange = 0;
+		}
 		//first thing we do in the loop is handle inputs
 		while (SDL_PollEvent(&event) != 0) {
 			//ok so what events are we thinking of? x out, move mouse, shift and ctrl for height
@@ -1140,6 +1222,49 @@ int main(int argc, char* args[]) {
 		subPixelOffsetX = round(subPixelDiffX * (pixelSize - 1));
 		subPixelOffsetY = round(subPixelDiffY * (pixelSize - 1));
 
+
+		//bubble processing
+
+		//pop oldest bubble if necessary
+		if (bQFront != bQEnd && SDL_GetTicks() > bubbleQueue[bQFront].popTime) {
+			printf("popped the bubble\n");
+			bQFront++;
+			if (bQFront == 100) {
+				bQFront = 0;
+			}
+		}
+		int ind = bQFront;
+		//update bubble positions
+		while (ind != bQEnd) {
+			bubbleQueue[ind].x += bubbleQueue[ind].xSpd * frameDelta;
+			bubbleQueue[ind].y += bubbleQueue[ind].ySpd * frameDelta;
+			bubbleQueue[ind].xSpd *= 1 - frameDelta / 200;
+			bubbleQueue[ind].ySpd *= 1 - frameDelta / 200;
+			bubbleQueue[ind].ySpd -= .0001 * frameDelta;
+			ind++;
+			if (ind == 100){
+				ind = 0;
+			}
+		}
+		//printf("made it past the while loop\n");
+
+		if (tickChange && (xAccel != 0 || yAccel != 0)) {
+			printf("making new bubble!\n");
+			bubble newBub;
+			newBub.popTime = SDL_GetTicks() + 4000;
+			newBub.x = playerX + 4 * (2*(xSpeed < 0) - 1) + (rand() % 10 - 5) / 3.0;
+			newBub.y = playerY + (rand() % 10 - 5)/2;
+			newBub.xSpd = xSpeed/2 /*+ (rand() % 10 - 5) / 10.0*/;
+			newBub.ySpd = ySpeed/2 /*+ (rand() % 10 - 5) / 10.0*/;
+			bubbleQueue[bQEnd] = newBub;
+			bQEnd++;
+			if (bQEnd == 100) {
+				bQEnd = 0;
+			}
+		}
+
+
+
 		//calculate viewport lag
 		//first draft: base it on speed. TODO: replace this stuff with constants (the 20s, the 100)
 		viewportRect.x = viewportPad - xSpeed * vPadSpeedConstant;
@@ -1194,9 +1319,10 @@ int main(int argc, char* args[]) {
 		
 		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 		
+		//render lightingbuffer to final buffer
 		SDL_SetRenderTarget(renderer, finalBuffer);
-
 		SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+
 
 		//Now let's compose the submarine texture
 		if (xSpeed > 0) {
@@ -1215,8 +1341,23 @@ int main(int argc, char* args[]) {
 		SDL_SetRenderTarget(renderer, finalBuffer);
 		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
 
+		//render bubbles to final buffer
+		//have to add GW/2
+		ind = bQFront;
+		SDL_Rect bubbleRect;
+		while (ind != bQEnd) {
+			bubbleRect.x = (bubbleQueue[ind].x + GAME_WIDTH / 2 - playerX) * pixelSize;
+			bubbleRect.y = (bubbleQueue[ind].y + GAME_HEIGHT / 2 - playerY) * pixelSize;
+			printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
+			bubbleRect.h = 15;
+			bubbleRect.w = 15;
+			SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
+			ind = (ind + 1) * (ind < 100); //increment ind or set to 0 if overflows
+		}
+
 		//Add darkness texture to finalBuffer
 		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+
 
 		//Now draw a portion of the window to the real place
 		SDL_SetRenderTarget(renderer, NULL);
@@ -1225,21 +1366,58 @@ int main(int argc, char* args[]) {
 
 		//Now draw extra effects like red danger filter:
 		if (collisionCheck > 0) {
+			healthRemaining -= 2;
 			redSlider = 150;
 		}
 		else {
-			redSlider -= 1;
+			redSlider -= 1*frameDelta;
 			if (redSlider < 0) {
 				redSlider = 0;
 			}
 		}
 		if (redSlider > 0) {
 			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-			SDL_SetRenderDrawColor(renderer, 255, 0, 0, redSlider);
+			SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int) redSlider);
 			SDL_RenderFillRect(renderer, NULL);
 			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 		}
 
+		//render menu items and meters to the screen
+		SDL_Rect meterScreenRect = { 50, 50, 3*86, 3*7 };
+		
+		//select and draw empty meters
+		SDL_Rect meterSelectRect = { 0, 7, 86, 7 };
+		for (int i = 0; i < 3; i++) {
+			SDL_RenderCopy(renderer, metersTexture, &meterSelectRect, &meterScreenRect);
+			meterScreenRect.y += 30;
+		}
+
+		//select and draw air meter
+		meterSelectRect.y = 14;
+		meterSelectRect.w = (airRemaining / airCapacity) * 86;
+		
+		meterScreenRect.y = 50;
+		meterScreenRect.w = 3*meterSelectRect.w;
+		
+		SDL_RenderCopy(renderer, metersTexture, &meterSelectRect, &meterScreenRect);
+
+		//select and draw power meter
+		meterSelectRect.y = 21;
+		meterSelectRect.w = (powerRemaining / powerCapacity) * 86;
+
+		meterScreenRect.y += 30;
+		meterScreenRect.w = 3 * meterSelectRect.w;
+
+		SDL_RenderCopy(renderer, metersTexture, &meterSelectRect, &meterScreenRect);
+
+		//select and draw health meter;
+		meterSelectRect.y = 28;
+		meterSelectRect.w = (healthRemaining / healthCapacity) * 86;
+
+		meterScreenRect.y += 30;
+		meterScreenRect.w = 3 * meterSelectRect.w;
+
+		SDL_RenderCopy(renderer, metersTexture, &meterSelectRect, &meterScreenRect);
 
 		SDL_RenderPresent(renderer);
 
@@ -1247,12 +1425,15 @@ int main(int argc, char* args[]) {
 		frameCount++;
 		//printf("OVR AVG FPS: %d", 1000 * frameCount / SDL_GetTicks());
 		//quit = 1;
+
+		airRemaining -= frameDelta/1000;
+		powerRemaining -= frameDelta / 3000;
+		powerRemaining -= (frameDelta / 500) * (pushingVert || pushingSide);
 }
 
 	//free up everything and quit
 	//Destroy window
 	SDL_DestroyWindow(window);
-	window = NULL;
 
 	SDL_FreeSurface(layerTwo);
 	
@@ -1271,6 +1452,10 @@ int main(int argc, char* args[]) {
 	SDL_DestroyTexture(flashlightTexture);
 
 	SDL_DestroyTexture(submarineBuffer);
+
+	SDL_DestroyTexture(bubbleTexture);
+
+	SDL_DestroyTexture(metersTexture);
 
 	SDL_DestroyRenderer(renderer);
 
