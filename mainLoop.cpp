@@ -109,12 +109,23 @@ struct bubble {
 	Uint32 popTime;
 };
 
+//idea: width gets smaller before it gets larger, so theres small paths down into the caves instead of patches.
+float getCaveWidth(float y, float x) {
+	if (y < -400 + 20*SimplexNoise::noise(x/50)) { return 1; }
+	float caveWidth = pow(1.0000000001, (-y*y*y*y)) - 0.4;
+	
+		//float caveWidth = 0.6 - y / 500;
+	//if (caveWidth > 0.5) {
+	//	caveWidth += 3 * (caveWidth - 0.5);
+	//}
+	return caveWidth;
+}
+
 //returns 1 if open water, 0 if cave?
 bool caveNoise(float x, float y) {
 	//generate the width modifier from y value.
-	float caveWidth = 0.6 - y / 500;
 	//return the noise check
-	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + caveWidth > noiseCutoffLevel;
+	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(y , x) > noiseCutoffLevel;
 }
 
 //mod method that loops around for negative numbers
@@ -677,10 +688,10 @@ int marchingSlope(float x, float y) {
 	int dy = floor(y) + 1;
 
 	//replace with a more dedicated noise function?
-	short checkA = SimplexNoise::noise(ax / noiseScaleFactor, ay / noiseScaleFactor) <= noiseCutoffLevel;
-	short checkB = SimplexNoise::noise(bx / noiseScaleFactor, by / noiseScaleFactor) <= noiseCutoffLevel;
-	short checkC = SimplexNoise::noise(cx / noiseScaleFactor, cy / noiseScaleFactor) <= noiseCutoffLevel;
-	short checkD = SimplexNoise::noise(dx / noiseScaleFactor, dy / noiseScaleFactor) <= noiseCutoffLevel;
+	short checkA = !caveNoise(ax,ay); 
+	short checkB = !caveNoise(bx,by); 
+	short checkC = !caveNoise(cx,cy);
+	short checkD = !caveNoise(dx,dy);
 
 	short cornerMask = checkA << 3 | checkB << 2 | checkC << 1 | checkD;
 
@@ -851,7 +862,7 @@ void initializeEverything() {
 	//initialize the terrain array:
 	for (int i = 0; i < GAME_WIDTH; i++) {
 		for (int j = 0; j < GAME_HEIGHT; j++) {
-			caveTerrain[i][j] = SimplexNoise::noise(i / noiseScaleFactor, j / noiseScaleFactor) > noiseCutoffLevel;
+			caveTerrain[i][j] = caveNoise(i, j);
 		}
 	}
 
@@ -1195,7 +1206,7 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = istart; i < iend; i++) {
 			for (int j = 0; j < GAME_HEIGHT; j++) {
-				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = SimplexNoise::noise((i + playerX) / noiseScaleFactor, (j + playerY) / noiseScaleFactor) > noiseCutoffLevel;
+				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
 			}
 		}
 
@@ -1211,7 +1222,7 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = 0; i < GAME_WIDTH; i++) {
 			for (int j = jstart; j < jend; j++) {
-				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = SimplexNoise::noise((i + playerX) / noiseScaleFactor, (j + playerY) / noiseScaleFactor) > noiseCutoffLevel;
+				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j+playerY);
 			}
 		}
 
@@ -1291,8 +1302,12 @@ int main(int argc, char* args[]) {
 		SDL_RenderClear(renderer);
 
 		//Poke holes in the darkness texture
-		rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
-		
+		if (playerY > -550) {
+			rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
+		}
+		else {
+			printf("no more lighting");
+		}
 		//Clear finalBuffer
 		SDL_RenderClear(renderer);
 
@@ -1348,7 +1363,7 @@ int main(int argc, char* args[]) {
 		while (ind != bQEnd) {
 			bubbleRect.x = (bubbleQueue[ind].x + GAME_WIDTH / 2 - playerX) * pixelSize;
 			bubbleRect.y = (bubbleQueue[ind].y + GAME_HEIGHT / 2 - playerY) * pixelSize;
-			printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
+			//printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
 			bubbleRect.h = 15;
 			bubbleRect.w = 15;
 			SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
@@ -1356,8 +1371,29 @@ int main(int argc, char* args[]) {
 		}
 
 		//Add darkness texture to finalBuffer
-		SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+		if (playerY > -550) {
+			SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+		}
+		else {
+			unsigned char bright = (- 550 - playerY)/2;
+			int excess = 0;
+			if (playerY < -790) {
+				excess = ( - 790 - playerY)*pixelSize;
+				bright = (-550 +790)/2;
+			}
+			unsigned char dark = bright/2;
+			SDL_Vertex sunGradientVert[4];
+			sunGradientVert[0] = { {0,            (float)excess}, {bright, bright, bright, bright}, {1,1} };
+			sunGradientVert[1] = { {SCREEN_WIDTH, (float)excess}, {bright, bright, bright, bright}, {1,1} };
+			sunGradientVert[2] = { {0,            SCREEN_HEIGHT}, {dark,   dark,   dark,   bright}, {1,1} };
+			sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT}, {dark,   dark,   dark,   bright}, {1,1} };
 
+
+			int sunGradInd[6] = { 0,1,2,1,2,3 };
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+			SDL_RenderGeometry(renderer, NULL, sunGradientVert, 4, sunGradInd, 6);
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+		}
 
 		//Now draw a portion of the window to the real place
 		SDL_SetRenderTarget(renderer, NULL);
@@ -1429,6 +1465,9 @@ int main(int argc, char* args[]) {
 		airRemaining -= frameDelta/1000;
 		powerRemaining -= frameDelta / 3000;
 		powerRemaining -= (frameDelta / 500) * (pushingVert || pushingSide);
+
+		//debug
+		printf("caveWidth factor: %f\n", getCaveWidth(playerY, playerX));
 }
 
 	//free up everything and quit
