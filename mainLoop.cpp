@@ -76,6 +76,15 @@ SDL_Texture* bubbleTexture = NULL;
 //texture to store the bars
 SDL_Texture* metersTexture = NULL;
 
+//starry sky texture
+SDL_Texture* starrySkyTexture = NULL;
+
+//moon texture
+SDL_Texture* moonTexture = NULL;
+
+//Cloud texture
+SDL_Texture* cloudTexture = NULL;
+
 //Game constants
 bool caveTerrain[GAME_WIDTH][GAME_HEIGHT] = { {} };
 float playerX = 0;
@@ -756,65 +765,50 @@ int marchingSlope(float x, float y) {
 //it might be time to split into multiple files
 //TODO: change pixel drawing func to not create a new rect every time? just change the . check if atually improves performance though.	
 
-void loadImages() {
+SDL_Texture* texFromBMP(const char* filepath, SDL_BlendMode bmode, Uint8 alphaMod) {
 	SDL_Surface* tempSurface;
-
-	//Load player Submarine sprite
-	tempSurface = SDL_LoadBMP("imageFiles/playerSubmarine.bmp");
+	tempSurface = SDL_LoadBMP(filepath);
 	if (tempSurface == NULL) {
-		printf("ERROR: Couldn't load playerSubmarine bmp\n");
+		printf("ERROR: couldn't load bmp from ");
+		printf(filepath);
+		printf("\n");
+		return NULL;
 	}
 	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0); //maybe not necessary? who knows
-	playerSubmarineTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
-	if (playerSubmarineTexture == NULL) {
-		printf("ERROR: Couldn't create playerSubmarine texture from bmp");
+	SDL_Texture* result = SDL_CreateTextureFromSurface(renderer, tempSurface);
+	if (result == NULL) {
+		printf("ERROR: Couldn't create texture from ");
+		printf(filepath);
+		printf("\n");
+		return NULL;
 	}
-
-	SDL_SetTextureBlendMode(playerSubmarineTexture, SDL_BLENDMODE_NONE);
-	SDL_SetTextureAlphaMod(playerSubmarineTexture, 150);
+	SDL_SetTextureBlendMode(result, bmode);
+	SDL_SetTextureAlphaMod(result, alphaMod);
 	SDL_FreeSurface(tempSurface);
+	return result;
+}
 
-	//load flashlight sprite
-	tempSurface = SDL_LoadBMP("imageFiles/flashlight.bmp");
-	if (tempSurface == NULL) {
-		printf("ERROR: Couldn't load flashlight bmp\n");
-	}
-	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
-	flashlightTexture = SDL_CreateTextureFromSurface(renderer, tempSurface); //maybe draw in a different order?
-	if (flashlightTexture == NULL) {
-		printf("ERROR: Couldn't create flashlight texture from bmp");
-	}
-	SDL_SetTextureBlendMode(flashlightTexture, SDL_BLENDMODE_BLEND);
-	SDL_SetTextureAlphaMod(flashlightTexture, 255);
-	SDL_FreeSurface(tempSurface);
+void loadImages() {
+	//Load player Submarine sprite
+	playerSubmarineTexture = texFromBMP("imageFiles/playerSubmarine.bmp", SDL_BLENDMODE_NONE, 150);
+
+	//load player flashlight sprite
+	flashlightTexture = texFromBMP("imageFiles/flashlight.bmp", SDL_BLENDMODE_BLEND, 255);
 
 	//load bubble sprite
-	tempSurface = SDL_LoadBMP("imageFiles/bubble.bmp");
-	if (tempSurface == NULL) {
-		printf("ERROR: Couldn't load bubble bmp\n");
-	}
-	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
-	bubbleTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
-	if (bubbleTexture == NULL) {
-		printf("ERROR: Couldnt create bubble texture from bmp");
-	}
-	SDL_SetTextureBlendMode(bubbleTexture, SDL_BLENDMODE_MUL);
-	SDL_SetTextureAlphaMod(bubbleTexture, 0);
-	SDL_FreeSurface(tempSurface);
+	bubbleTexture = texFromBMP("imageFiles/bubble.bmp", SDL_BLENDMODE_MUL, 0);
 
 	//load meters sprite
-	tempSurface = SDL_LoadBMP("imageFiles/meters.bmp");
-	if (tempSurface == NULL) {
-		printf("ERROR: Couldn't load meters bmp");
-	}
-	SDL_ConvertSurfaceFormat(tempSurface, SDL_PIXELFORMAT_RGBA8888, 0);
-	metersTexture = SDL_CreateTextureFromSurface(renderer, tempSurface);
-	if (metersTexture == NULL) {
-		printf("ERROR: Couldn't create meters texture from bmp");
-	}
-	SDL_SetTextureBlendMode(metersTexture, SDL_BLENDMODE_BLEND);
-	SDL_SetTextureAlphaMod(metersTexture, 255);
-	SDL_FreeSurface(tempSurface);
+	metersTexture = texFromBMP("imageFiles/meters.bmp", SDL_BLENDMODE_BLEND, 255);
+
+	//load starry sky sprite
+	starrySkyTexture = texFromBMP("imageFiles/starrySky.bmp", SDL_BLENDMODE_NONE, 255);
+
+	//load moon sprite
+	moonTexture = texFromBMP("imageFiles/moon.bmp", SDL_BLENDMODE_NONE, 255);
+
+	//load cloud texture
+	cloudTexture = texFromBMP("imageFiles/clouds.bmp", SDL_BLENDMODE_BLEND, 100);
 }
 
 void initializeEverything() {
@@ -975,6 +969,9 @@ int main(int argc, char* args[]) {
 	//length of a tick in milliseconds
 	const Uint32 tickLength = 50;
 
+	int prevX = floor(playerX);
+	int prevY = floor(playerY);
+
 	//MAIN LOOP!!!
 	while (!quit) {
 		if (SDL_GetTicks() - lastTickChange > tickLength) {
@@ -1097,20 +1094,47 @@ int main(int argc, char* args[]) {
 		//float frameDelta = (SDL_GetTicks() - prevTicks)/2;
 		//if (frameDelta <= 0) { frameDelta = 1; }
 		//prevTicks = SDL_GetTicks();
+		float portion = 0;
+		if (playerY < -839) {
+			//in the air
+			//portion !!underwater!!: how far below 844 we are
+			portion = (844 + playerY)/6;
+			if (portion < 0) {
+				portion = 0;
+			}
+			yAccel = 0.001 - portion/500;
+			printf("portion, port/200, yAccel: %f,%f, %f\n",portion, portion/200, yAccel);
+			if (playerY > -844) {
+				ySpeed *= 1 - 0.001;
+				xSpeed *= 1 - 0.001;
+				if (pushingUp) {
+					yAccel = ACCEL_RATE;
+				}
+			}
+			else {
+				xAccel = 0;
+			}
 		
+		}
+		else if (prevY < -841) {
+			printf("setting yacc back to 0");
+			yAccel = 0;
+			xAccel = 0;
+		}
+
 		xSpeed += xAccel*frameDelta;
 		ySpeed += yAccel*frameDelta;
 
 		//TODO: figure out a way to frameDelta this
-		if (xAccel == 0) {
+		if (prevY > -841 && xAccel == 0) {
 			xSpeed *= 1 - frameDelta/200;
 		}
-		if (yAccel == 0) {
+		if (prevY > -841 && yAccel == 0) {
 			ySpeed *= 1 - frameDelta/200;
 		}
 
-		int prevX = floor(playerX);
-		int prevY = floor(playerY);
+		prevX = floor(playerX);
+		prevY = floor(playerY);
 
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
@@ -1260,7 +1284,7 @@ int main(int argc, char* args[]) {
 		//printf("made it past the while loop\n");
 
 		if (tickChange && (xAccel != 0 || yAccel != 0)) {
-			printf("making new bubble!\n");
+			//printf("making new bubble!\n");
 			bubble newBub;
 			newBub.popTime = SDL_GetTicks() + 4000;
 			newBub.x = playerX + 4 * (2*(xSpeed < 0) - 1) + (rand() % 10 - 5) / 3.0;
@@ -1298,6 +1322,20 @@ int main(int argc, char* args[]) {
 		mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT / 2), xMouse - (SCREEN_WIDTH / 2)) * 180 / 3.1415;
 		
 
+		//BEGIN RENDERING THE FRAME
+
+			//breakdown of rendering process
+				//take black texture, poke transparent holes in it. thats darkness texture
+				//take flashlighting texture (large bright thing, same size as screen). copy to lighting buffer.
+					//draw transparency with rendergeometry so only the triangle gets through.
+					// 
+					//layer on the smaller lighting texture using blendmode ADD.
+					//compose the submarine texture. main sub body is partially transparent. Then blend onto lighting texture so its partially lit.
+					//IDEA, DO THIS OTHER WAY. LIGHTING TEXTURE ADDS ON TO SUB? THEN CAN DO SKY FIRST, THEN SUB, THEN LIGHTING AS AN ADD. THAT WOULD WORK!!
+					
+
+
+
 		//Clear real backBuffer
 		SDL_RenderClear(renderer);
 
@@ -1306,7 +1344,7 @@ int main(int argc, char* args[]) {
 			rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
 		}
 		else {
-			printf("no more lighting");
+			//printf("no more lighting");
 		}
 		//Clear finalBuffer
 		SDL_RenderClear(renderer);
@@ -1366,7 +1404,9 @@ int main(int argc, char* args[]) {
 			//printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
 			bubbleRect.h = 15;
 			bubbleRect.w = 15;
-			SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
+			if (bubbleQueue[ind].y > -840) {
+				SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
+			}
 			ind = (ind + 1) * (ind < 100); //increment ind or set to 0 if overflows
 		}
 
@@ -1375,23 +1415,47 @@ int main(int argc, char* args[]) {
 			SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
 		}
 		else {
+			//playerY < -840 is the surface
 			unsigned char bright = (- 550 - playerY)/2;
 			int excess = 0;
 			if (playerY < -790) {
 				excess = ( - 790 - playerY)*pixelSize;
+				//printf("excess: %d", excess);
+				//printf("playerY: %f", playerY);
 				bright = (-550 +790)/2;
 			}
 			unsigned char dark = bright/2;
 			SDL_Vertex sunGradientVert[4];
-			sunGradientVert[0] = { {0,            (float)excess}, {bright, bright, bright, bright}, {1,1} };
+			sunGradientVert[0] = { {0,          (float)excess}, {bright, bright, bright, bright}, {1,1} };
 			sunGradientVert[1] = { {SCREEN_WIDTH, (float)excess}, {bright, bright, bright, bright}, {1,1} };
-			sunGradientVert[2] = { {0,            SCREEN_HEIGHT}, {dark,   dark,   dark,   bright}, {1,1} };
-			sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT}, {dark,   dark,   dark,   bright}, {1,1} };
+			sunGradientVert[2] = { {0,          SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
+			sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
 
 
 			int sunGradInd[6] = { 0,1,2,1,2,3 };
 			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+			//SDL_SetRenderTarget(renderer, lightingBuffer);
+
 			SDL_RenderGeometry(renderer, NULL, sunGradientVert, 4, sunGradInd, 6);
+			//SDL_SetRenderTarget(renderer, finalBuffer);
+			//SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+
+			
+			//render the nightSky
+			SDL_SetRenderTarget(renderer, NULL);
+			//render stars texture first
+			SDL_Rect skyRect = { 0, (float)excess - SCREEN_HEIGHT,SCREEN_WIDTH, SCREEN_HEIGHT };
+			SDL_RenderCopy(renderer, starrySkyTexture, NULL, &skyRect);
+			
+			//render moon texture
+			skyRect = { 50,50,50,50 };
+			SDL_RenderCopy(renderer, moonTexture, NULL, &skyRect);
+
+			//render clouds
+			skyRect = { 0,55, SCREEN_WIDTH, 60 };
+			SDL_Rect cloudRect = { ringMod(playerX,2000), 0, SCREEN_WIDTH, 60 };
+			SDL_RenderCopy(renderer, cloudTexture, &cloudRect, &skyRect);
+
 			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 		}
 
@@ -1463,11 +1527,17 @@ int main(int argc, char* args[]) {
 		//quit = 1;
 
 		airRemaining -= frameDelta/1000;
+		if (playerY < -841) {
+			airRemaining += frameDelta / 100;
+			if (airRemaining > airCapacity) {
+				airRemaining = airCapacity;
+			}
+		}
 		powerRemaining -= frameDelta / 3000;
 		powerRemaining -= (frameDelta / 500) * (pushingVert || pushingSide);
 
 		//debug
-		printf("caveWidth factor: %f\n", getCaveWidth(playerY, playerX));
+		//printf("caveWidth factor: %f\n", getCaveWidth(playerY, playerX));
 }
 
 	//free up everything and quit
