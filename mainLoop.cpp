@@ -333,7 +333,7 @@ void fillTraceBackTable() {
 		if (snapAngles[i] < 0 && snapAngles[i] > -2) { snapAngles[i] = 0; }
 		if (snapAngles[i] < 0) { snapAngles[i] += 360; }
 	}
-	snapAngles[numVirtualRays] = 360;
+	snapAngles[numVirtualRays-1] = 360;
 	for (int i = 0; i < GAME_WIDTH << 1; i++) {
 		for (int j = 0; j < GAME_HEIGHT << 1; j++) {
 			int xdist = GAME_WIDTH - i;
@@ -486,7 +486,7 @@ void handlePixelInSpiral(int x, int y, int spiralCenterX, int spiralCenterY) {
 //Controls brightness of the lighting texture. Higher is brighter/farther
 
 //const float distanceScaleFactor = 10; for 
-SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMode bMode) {
+SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMode bMode, Uint8 alpha) {
 	//TODO: allow tis method to be used from any pt, not just center.
 	SDL_Surface* lightingSurface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA8888); //maybe remove alpha channel?
 	//SDL_SetSurfaceBlendMode(lightingSurface, SDL_BLENDMODE_ADD);
@@ -498,7 +498,7 @@ SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMod
 			dSquared /= distanceScaleFactor;
 			dSquared++;
 			//if (dSquared < 1) { dSquared = 1; };
-			setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), lightingSurface);
+			setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), alpha, (int)255 / (dSquared), lightingSurface);
 		}
 	}
 	//Uint32 color = 255 | (uint32_t)255 << 8;
@@ -783,17 +783,19 @@ SDL_Texture* texFromBMP(const char* filepath, SDL_BlendMode bmode, Uint8 alphaMo
 		return NULL;
 	}
 	SDL_SetTextureBlendMode(result, bmode);
-	SDL_SetTextureAlphaMod(result, alphaMod);
+	if (alphaMod != -1) {
+		SDL_SetTextureAlphaMod(result, alphaMod);
+	}
 	SDL_FreeSurface(tempSurface);
 	return result;
 }
 
 void loadImages() {
 	//Load player Submarine sprite
-	playerSubmarineTexture = texFromBMP("imageFiles/playerSubmarine.bmp", SDL_BLENDMODE_NONE, 150);
+	playerSubmarineTexture = texFromBMP("imageFiles/playerSubmarine.bmp", SDL_BLENDMODE_BLEND, -1);
 
 	//load player flashlight sprite
-	flashlightTexture = texFromBMP("imageFiles/flashlight.bmp", SDL_BLENDMODE_BLEND, 255);
+	flashlightTexture = texFromBMP("imageFiles/flashlight.bmp", SDL_BLENDMODE_BLEND, -1);
 
 	//load bubble sprite
 	bubbleTexture = texFromBMP("imageFiles/bubble.bmp", SDL_BLENDMODE_MUL, 0);
@@ -808,7 +810,7 @@ void loadImages() {
 	moonTexture = texFromBMP("imageFiles/moon.bmp", SDL_BLENDMODE_NONE, 255);
 
 	//load cloud texture
-	cloudTexture = texFromBMP("imageFiles/clouds.bmp", SDL_BLENDMODE_BLEND, 100);
+	cloudTexture = texFromBMP("imageFiles/clouds.bmp", SDL_BLENDMODE_BLEND, 200);
 }
 
 void initializeEverything() {
@@ -860,7 +862,7 @@ void initializeEverything() {
 		}
 	}
 
-	lightingTexture = createLightingTexture(40, SDL_BLENDMODE_ADD);
+	lightingTexture = createLightingTexture(60, SDL_BLENDMODE_BLEND, 150);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -879,10 +881,203 @@ void initializeEverything() {
 
 	//not sure yet if i need this layer
 	lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, GAME_WIDTH, GAME_HEIGHT);
-
-	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE);
+	SDL_SetTextureBlendMode(lightingBuffer, SDL_BLENDMODE_BLEND); //try blend if this doesnt work? but i think it will.
+	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE, 200);
 
 	//SDL_ShowCursor(SDL_DISABLE);
+}
+
+void clearBuffers() {
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+
+	SDL_SetRenderTarget(renderer, NULL);
+	SDL_RenderClear(renderer);
+
+	SDL_SetRenderTarget(renderer, finalBuffer);
+	SDL_RenderClear(renderer);
+
+	SDL_SetRenderTarget(renderer, submarineBuffer);
+	SDL_RenderClear(renderer);
+
+	SDL_SetRenderTarget(renderer, lightingBuffer);
+	SDL_RenderClear(renderer);
+
+	//special clear for darkness texture
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+	SDL_SetRenderTarget(renderer, darknessTexture);
+	SDL_RenderClear(renderer);
+}
+
+void composeSubmarine(SDL_RendererFlip charFlip, SDL_Rect* flashlightPos, float mouseAngle) {
+	SDL_SetRenderTarget(renderer, submarineBuffer);
+	SDL_RenderCopyEx(renderer, playerSubmarineTexture, NULL, NULL, 0, NULL, charFlip);
+	SDL_RenderCopyEx(renderer, flashlightTexture, NULL, flashlightPos, mouseAngle, NULL, SDL_FLIP_NONE); //slap on the flashlight texture
+}
+
+void composeLighting(float mouseAngle) {
+	SDL_SetRenderTarget(renderer, lightingBuffer);
+	SDL_RenderCopy(renderer, flashLightingTexture, NULL, NULL);
+
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+
+	//set up vertices for cutting the flashlight into a triangle.
+	float angleLeft = mouseAngle - 15;
+	float angleRight = mouseAngle + 15;
+
+	SDL_Vertex vertList[6];
+	vertList[0] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
+	vertList[1] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
+	vertList[2] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleLeft - 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleLeft - 90) * toRad)}  ,  {0, 0, 0, 0}, {1, 1} };
+
+	vertList[3] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
+	vertList[4] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
+	vertList[5] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleRight + 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleRight + 90) * toRad)} ,  {0, 0, 0, 0}, {1, 1} };
+
+	SDL_RenderGeometry(renderer, NULL, vertList, 6, NULL, 0);
+	//SDL_SetTextureAlphaMod(lightingTexture, 160);
+	SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+}
+
+void renderBubbles(int bQFront, int bQEnd, bubble* bubbleQueue) {
+	int ind = bQFront;
+	SDL_Rect bubbleRect;
+
+	SDL_SetRenderTarget(renderer, finalBuffer);
+
+	while (ind != bQEnd) {
+		bubbleRect.x = (bubbleQueue[ind].x + GAME_WIDTH / 2 - playerX) * pixelSize;
+		bubbleRect.y = (bubbleQueue[ind].y + GAME_HEIGHT / 2 - playerY) * pixelSize;
+		//printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
+		bubbleRect.h = 15;
+		bubbleRect.w = 15;
+		if (bubbleQueue[ind].y > -840) {
+			SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
+		}
+		ind = (ind + 1) * (ind < 100); //increment ind or set to 0 if overflows
+	}
+}
+
+void renderClouds(SDL_Rect viewportRect) {
+	float portionRevealed = 0;
+	float camXPosWorld = playerX + viewportRect.x / pixelSize;
+	float camYPosWorld = playerY + viewportRect.y / pixelSize;
+	int numPixRevealed = (- 780 - camYPosWorld); //num pix revealed/300
+	if (numPixRevealed < 0) {
+		numPixRevealed = 0;
+	}
+	portionRevealed = numPixRevealed / 35.0;
+	if (portionRevealed > 1) {
+		portionRevealed = 1;
+	}
+
+	SDL_Rect cloudSourceRect = { 0,0, 2000,60*portionRevealed}; //select whole cloud bar
+	SDL_Rect cloudDestRect = { viewportRect.x, viewportRect.y, 2000 * pixelSize, 300*portionRevealed };//printed from viewport rect
+	//camera x pos in world!
+	
+	camXPosWorld += 1000;
+	camYPosWorld += 860;
+	cloudDestRect.x -= camXPosWorld;
+	cloudDestRect.x = -ringMod(-cloudDestRect.x, 1800*pixelSize);
+	//printf("cdestrec, %d\n", cloudDestRect.x);
+	//if (cloudDestRect.x > 0*pixelSize) {
+	//	printf("looping clouds!\n");
+	//	cloudDestRect.x -= 1800 * pixelSize;
+	//}
+	//else if (cloudDestRect.x < -1800*pixelSize) {
+	//	printf("looping clouds back!\n");
+	//	cloudDestRect.x += 1800*pixelSize;
+	//}
+	cloudDestRect.y -= camYPosWorld;
+	
+	//SDL_Rect cloudDestRect = {-playerX - 1000 + viewportRect.x/pixelSize, (- 820 - playerY + viewportRect.y/pixelSize), pixelSize*2000, 300};
+	SDL_RenderCopy(renderer, cloudTexture, &cloudSourceRect, &cloudDestRect);
+}
+
+void renderNightSky(SDL_Rect viewportRect) {
+	SDL_Rect skySourceRect = {0,0,300,(- 790 - playerY - (float)viewportRect.y/pixelSize)*3};
+	//should always be drawn from The top of the screen to water surface.
+	//height should be diff between playerY and water (at -790)
+	SDL_Rect skyDestRect = {viewportRect.x, viewportRect.y, viewportRect.w, (-790 - playerY - (float)viewportRect.y/pixelSize) * pixelSize};
+	SDL_RenderCopy(renderer, starrySkyTexture, &skySourceRect, &skyDestRect);
+	//if (playerY < -790) {
+		renderClouds(viewportRect);
+	//}
+}
+
+void renderTurbulentWater(SDL_Vertex gradientCorner, SDL_Rect *viewportRect) {
+	//height above water level:
+	SDL_SetRenderDrawColor(renderer, 120, 120, 120, 120);
+
+	SDL_Rect waterRect = { 0,gradientCorner.position.y, pixelSize, 0 };
+	for (int i = 0; i < SCREEN_WIDTH; i += pixelSize) {
+		float waterHeight = 5*(1+SimplexNoise::noise((i+(playerX*pixelSize + viewportRect->x)) / 100.0, SDL_GetTicks() / 1200.0));
+		waterRect.x = i;
+		waterRect.y -= floor(waterHeight);
+		waterRect.h = floor(waterHeight);
+		SDL_RenderFillRect(renderer, &waterRect);
+		waterRect.y = gradientCorner.position.y;
+	}
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
+void renderSunGradient(SDL_Rect* viewportRect) {
+
+	SDL_Vertex sunGradientVertex[4];
+	sunGradientVertex[0] = { {0, ceilf((- 790 - playerY)*pixelSize)}, {120,120,120,120}, {1,1}}; //top left of grad. might have to mult by something
+	sunGradientVertex[1] = { {SCREEN_WIDTH, ceilf(( - 790 - playerY)*pixelSize)}, {120,120,120,120}, {1,1}}; //top right of grad
+	sunGradientVertex[2] = { {0,  ceilf((-350 - playerY)*pixelSize)}, {0,0,0,0}, {1,1} }; //
+	sunGradientVertex[3] = { {SCREEN_WIDTH, ceilf((-350 - playerY)*pixelSize)}, {0,0,0,0}, {1,1} };
+	
+	int sunGradInd[6] = { 0,1,2,1,2,3 };
+
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	SDL_RenderGeometry(renderer, NULL, sunGradientVertex, 4, sunGradInd, 6);
+	
+	renderTurbulentWater(sunGradientVertex[0], viewportRect);
+
+	/*
+	unsigned char bright = (-550 - playerY) / 2;
+	int excess = 0;
+	if (playerY < -790) {
+		excess = (-790 - playerY) * pixelSize;
+		//printf("excess: %d", excess);
+		//printf("playerY: %f", playerY);
+		bright = (-550 + 790) / 2;
+	}
+	unsigned char dark = bright / 2;
+	SDL_Vertex sunGradientVert[4];
+	sunGradientVert[0] = { {0,          (float)excess}, {bright, bright, bright, bright}, {1,1} };
+	sunGradientVert[1] = { {SCREEN_WIDTH, (float)excess}, {bright, bright, bright, bright}, {1,1} };
+	sunGradientVert[2] = { {0,          SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
+	sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
+
+
+	int sunGradInd[6] = { 0,1,2,1,2,3 };
+	*/
+	//SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
+	//SDL_SetRenderTarget(renderer, lightingBuffer);
+
+	//SDL_RenderGeometry(renderer, NULL, sunGradientVert, 4, sunGradInd, 6);
+
+}
+
+void renderRedFilter(int collisionCheck, float* healthRemaining, float* redSlider, float frameDelta) {
+	if (collisionCheck > 0) {
+		*healthRemaining -= 2;
+		*redSlider = 150;
+	}
+	else {
+		*redSlider -= 1 * frameDelta;
+		if (*redSlider < 0) {
+			*redSlider = 0;
+		}
+	}
+	if (*redSlider > 0) {
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+		SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int)*redSlider);
+		SDL_RenderFillRect(renderer, NULL);
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+	}
 }
 
 int main(int argc, char* args[]) {
@@ -990,57 +1185,57 @@ int main(int argc, char* args[]) {
 			}
 			if (event.type == SDL_KEYDOWN) {
 				switch (event.key.keysym.sym) {
-					case SDLK_0:
-						debugFlag = 1;
-						break;
-					case SDLK_w:
-					case SDLK_UP:
-						pushingDown = true;
-						break;
-					case SDLK_s:
-					case SDLK_DOWN:
-						pushingUp = true;
-						break;
-					case SDLK_a:
-					case SDLK_LEFT:
-						pushingLeft = true;
-						break;
-					case SDLK_d:
-					case SDLK_RIGHT:
-						pushingRight = true;
-						break;
+				case SDLK_0:
+					debugFlag = 1;
+					break;
+				case SDLK_w:
+				case SDLK_UP:
+					pushingDown = true;
+					break;
+				case SDLK_s:
+				case SDLK_DOWN:
+					pushingUp = true;
+					break;
+				case SDLK_a:
+				case SDLK_LEFT:
+					pushingLeft = true;
+					break;
+				case SDLK_d:
+				case SDLK_RIGHT:
+					pushingRight = true;
+					break;
 
-					default:
-						break;
+				default:
+					break;
 				}
 			}
 			if (event.type == SDL_KEYUP) {
 				switch (event.key.keysym.sym) {
-					case SDLK_0:
-						debugFlag = false;
-						break;
-					case SDLK_w:
-					case SDLK_UP:
-						pushingDown = false;
-						yAccel = 0;
-						break;
-					case SDLK_s:
-					case SDLK_DOWN:
-						pushingUp = false;
-						yAccel = 0;
-						break;
-					case SDLK_a:
-					case SDLK_LEFT:
-						pushingLeft = false;
-						xAccel = 0;
-						break;
-					case SDLK_d:
-					case SDLK_RIGHT:
-						pushingRight = false;
-						xAccel = 0;
-						break;
-					default:
-						break;
+				case SDLK_0:
+					debugFlag = false;
+					break;
+				case SDLK_w:
+				case SDLK_UP:
+					pushingDown = false;
+					yAccel = 0;
+					break;
+				case SDLK_s:
+				case SDLK_DOWN:
+					pushingUp = false;
+					yAccel = 0;
+					break;
+				case SDLK_a:
+				case SDLK_LEFT:
+					pushingLeft = false;
+					xAccel = 0;
+					break;
+				case SDLK_d:
+				case SDLK_RIGHT:
+					pushingRight = false;
+					xAccel = 0;
+					break;
+				default:
+					break;
 				}
 			}
 		}
@@ -1048,11 +1243,12 @@ int main(int argc, char* args[]) {
 		//now adjust movement speed
 		bool pushingSide = pushingLeft || pushingRight;
 		bool pushingVert = pushingUp || pushingDown;
-		
+
 		if (pushingLeft) {
 			if (pushingVert) {
-				xAccel = -ACCEL_RATE/sqrt(2);
-			} else {
+				xAccel = -ACCEL_RATE / sqrt(2);
+			}
+			else {
 				xAccel = -ACCEL_RATE;
 			}
 		}
@@ -1067,7 +1263,8 @@ int main(int argc, char* args[]) {
 		if (pushingUp) {
 			if (pushingSide) {
 				yAccel = ACCEL_RATE / sqrt(2);
-			} else {
+			}
+			else {
 				yAccel = ACCEL_RATE;
 			}
 		}
@@ -1081,7 +1278,7 @@ int main(int argc, char* args[]) {
 		}
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
-		//int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
+		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
 		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 
 		newTime = std::chrono::steady_clock::now();
@@ -1089,21 +1286,21 @@ int main(int argc, char* args[]) {
 		oldTime = std::chrono::steady_clock::now();
 		//printf("frameMicros: %d\n", frameTime.count());
 
-		float frameDelta = frameTime.count()/2'000'000.0;
-		//printf("frameDelta: %f", frameDelta);
-		//float frameDelta = (SDL_GetTicks() - prevTicks)/2;
-		//if (frameDelta <= 0) { frameDelta = 1; }
-		//prevTicks = SDL_GetTicks();
+		float frameDelta = frameTime.count() / 2'000'000.0;
+
 		float portion = 0;
 		if (playerY < -839) {
 			//in the air
+			if (ySpeed < -0.3) {
+				ySpeed = -0.3;
+			}
 			//portion !!underwater!!: how far below 844 we are
-			portion = (844 + playerY)/6;
+			portion = (844 + playerY) / 6;
 			if (portion < 0) {
 				portion = 0;
 			}
-			yAccel = 0.001 - portion/500;
-			printf("portion, port/200, yAccel: %f,%f, %f\n",portion, portion/200, yAccel);
+			yAccel = 0.001 - portion / 500;
+			//frameDelta This
 			if (playerY > -844) {
 				ySpeed *= 1 - 0.001;
 				xSpeed *= 1 - 0.001;
@@ -1114,23 +1311,22 @@ int main(int argc, char* args[]) {
 			else {
 				xAccel = 0;
 			}
-		
+
 		}
 		else if (prevY < -841) {
-			printf("setting yacc back to 0");
 			yAccel = 0;
 			xAccel = 0;
 		}
 
-		xSpeed += xAccel*frameDelta;
-		ySpeed += yAccel*frameDelta;
+		xSpeed += xAccel * frameDelta;
+		ySpeed += yAccel * frameDelta;
 
 		//TODO: figure out a way to frameDelta this
 		if (prevY > -841 && xAccel == 0) {
-			xSpeed *= 1 - frameDelta/200;
+			xSpeed *= 1 - frameDelta / 200;
 		}
 		if (prevY > -841 && yAccel == 0) {
-			ySpeed *= 1 - frameDelta/200;
+			ySpeed *= 1 - frameDelta / 200;
 		}
 
 		prevX = floor(playerX);
@@ -1142,25 +1338,25 @@ int main(int argc, char* args[]) {
 		int collisionCheck = 0;
 		float temp = xSpeed;
 
-		//loop thru 4 corners
+		//perform collision check on 4 corners
 		for (int i = -2; i <= 2; i += 4) {
 			for (int j = -2; j <= 2; j += 4) {
-				collisionCheck = marchingSlope(playerX + i +  GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
+				collisionCheck = marchingSlope(playerX + i + GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
 				if (collisionCheck > 0) {
 					goto collided;
 				}
 			}
 		}
 		goto notCollided;
-		collided:
+	collided:
 		if (collisionCheck == -1) { printf("error! deep collision"); quit = 1; }
 		//abcd = bot left, bot right, top left, top right (in imaginary world)
 		//ok there's been a collision
-		printf("%d ", collisionCheck);
+		//printf("%d ", collisionCheck);
 		//undo previous movement. Now we are guaranteed (?) to be in open space
-		playerX -=   xSpeed * frameDelta;
-		playerY -=  ySpeed * frameDelta;
-		
+		playerX -= xSpeed * frameDelta;
+		playerY -= ySpeed * frameDelta;
+
 		switch (collisionCheck) {
 		case 1:
 		case 7:
@@ -1183,18 +1379,16 @@ int main(int argc, char* args[]) {
 			break;
 		case 10:
 		case 5:
-			printf("sus case");
 			xSpeed = -xSpeed * bumpFactor;
-			ySpeed = ySpeed * 2* bumpFactor;
+			ySpeed = ySpeed * 2 * bumpFactor;
 			break;
 		case 9:
 		case 6:
 		case 15:
-			printf("errer");
 			break;
 		}
-		
-		notCollided:
+
+	notCollided:
 
 		bufferOffsetX = ringMod(floor(playerX), GAME_WIDTH);
 		bufferOffsetY = ringMod(floor(playerY), GAME_HEIGHT);
@@ -1209,7 +1403,7 @@ int main(int argc, char* args[]) {
 		//ok now need buffer fill direction.
 		int bufferDirectionX = (playerX - prevX >= 0) - (playerX - prevX < 0);
 		int bufferDirectionY = (playerY - prevY >= 0) - (playerY - prevY < 0);
-		
+
 		// old way of determining this, that worked for everything except surprise collisions, which changed speed.
 		//int bufferDirectionX = (xSpeed >= 0) - (xSpeed < 0);
 		//int bufferDirectionY = (ySpeed >= 0) - (ySpeed < 0);
@@ -1246,7 +1440,7 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = 0; i < GAME_WIDTH; i++) {
 			for (int j = jstart; j < jend; j++) {
-				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j+playerY);
+				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
 			}
 		}
 
@@ -1277,7 +1471,7 @@ int main(int argc, char* args[]) {
 			bubbleQueue[ind].ySpd *= 1 - frameDelta / 200;
 			bubbleQueue[ind].ySpd -= .0001 * frameDelta;
 			ind++;
-			if (ind == 100){
+			if (ind == 100) {
 				ind = 0;
 			}
 		}
@@ -1287,10 +1481,10 @@ int main(int argc, char* args[]) {
 			//printf("making new bubble!\n");
 			bubble newBub;
 			newBub.popTime = SDL_GetTicks() + 4000;
-			newBub.x = playerX + 4 * (2*(xSpeed < 0) - 1) + (rand() % 10 - 5) / 3.0;
-			newBub.y = playerY + (rand() % 10 - 5)/2;
-			newBub.xSpd = xSpeed/2 /*+ (rand() % 10 - 5) / 10.0*/;
-			newBub.ySpd = ySpeed/2 /*+ (rand() % 10 - 5) / 10.0*/;
+			newBub.x = playerX + 4 * (2 * (xSpeed < 0) - 1) + (rand() % 10 - 5) / 3.0;
+			newBub.y = playerY + (rand() % 10 - 5) / 2;
+			newBub.xSpd = xSpeed / 2 /*+ (rand() % 10 - 5) / 10.0*/;
+			newBub.ySpd = ySpeed / 2 /*+ (rand() % 10 - 5) / 10.0*/;
 			bubbleQueue[bQEnd] = newBub;
 			bQEnd++;
 			if (bQEnd == 100) {
@@ -1320,8 +1514,13 @@ int main(int argc, char* args[]) {
 		SDL_GetMouseState(&xMouse, &yMouse);
 
 		mouseAngle = atan2f(yMouse - (SCREEN_HEIGHT / 2), xMouse - (SCREEN_WIDTH / 2)) * 180 / 3.1415;
-		
 
+		if (xSpeed > 0) {
+			charFlip = SDL_FLIP_NONE;
+		}
+		if (xSpeed < 0) {
+			charFlip = SDL_FLIP_HORIZONTAL;
+		}
 		//BEGIN RENDERING THE FRAME
 
 			//breakdown of rendering process
@@ -1330,133 +1529,179 @@ int main(int argc, char* args[]) {
 					//draw transparency with rendergeometry so only the triangle gets through.
 					// 
 					//layer on the smaller lighting texture using blendmode ADD.
-					//compose the submarine texture. main sub body is partially transparent. Then blend onto lighting texture so its partially lit.
-					//IDEA, DO THIS OTHER WAY. LIGHTING TEXTURE ADDS ON TO SUB? THEN CAN DO SKY FIRST, THEN SUB, THEN LIGHTING AS AN ADD. THAT WOULD WORK!!
-					
+					// splat lightingbuffer onto final buffer.
+					//compose the submarine texture. main sub body is partially transparent. Then BLEND onto finalBuffer texture so its partially lit.
+						//IDEA, DO THIS OTHER WAY. LIGHTING TEXTURE ADDS ON TO SUB? THEN CAN DO SKY FIRST, THEN SUB, THEN LIGHTING AS AN ADD. THAT WOULD WORK!!
+					//splat on the bubbles with Blendmode MUL, so they get lit up by the lighting texture.
+					//splat darkness texture using blend (so black parts replace, trans parts do nothing.
+							//OOOOORRRRRR
+					//dont splat the darkness, draw a semitransparent gradient over the screen
+
+	//ok so try the following:
+		//first, compose sky. paste it onto finalbuffer (shifted, so that camera move will place it back in same place as always)
+			//make sure to only print onto areas of the screen that will be sky at the end. that way, it wont show up under the water through the lighting texture.
+		//next, compose the submarine (and make it opaque). And paste it on the final buffer.
+		//next, compose lighting, and paste it onto the final scene as an ADD.
+		// multiply on the bubbles.
+		//next, splat the sunshine gradient on the scene. with a blend?
+		//next, splat the viewport from final buffer onto the screen!!
+
+		//clear out all buffers
+		clearBuffers();
+
+		//compose submarine
+		composeSubmarine(charFlip, &flashlightPos, mouseAngle);
+
+		//compose lighting
+		composeLighting(mouseAngle);
+
+		//compose darkness texture
+		if (playerY > -550) {
+			rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
+		}
+		//ok now everything seems to be composed.
+		//lets try layering
 
 
 
-		//Clear real backBuffer
-		SDL_RenderClear(renderer);
+
+		//DEBUG TESTS
+		SDL_SetRenderTarget(renderer, finalBuffer);
+		
+		//render starry sky to final buffer
+		renderNightSky(viewportRect);
+		//change this later to draw only in air areas. and shifted so appears stationary
+		//SDL_RenderCopy(renderer, starrySkyTexture, NULL, &viewportRect);
+
+		//render submarine on top of it, opaquely
+		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
+
+		//render lightingbuffer on top, as an add
+		//move this line elsewhere
+		SDL_SetTextureBlendMode(lightingBuffer, SDL_BLENDMODE_ADD);
+		SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+
+		//render bubbles onto texture
+		renderBubbles(bQFront, bQEnd, bubbleQueue);
+
+		//render darknessTexture
+		if (playerY > -550) {
+			SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+		}
+
+		//render lightGradient
+		renderSunGradient(&viewportRect);
+		//top of gradient should be at -841?
+		//bottom should be at -550?
+		
+
+		renderRedFilter(collisionCheck, &healthRemaining, &redSlider, frameDelta);
+
+
+		//render viewport to screen 
+		SDL_SetRenderTarget(renderer, NULL);
+		SDL_RenderCopy(renderer, finalBuffer, &viewportRect, NULL);
+		
+		//finally update the screen
+		SDL_RenderPresent(renderer);
+		
+
+
+		frameCount++;
+		continue;
+
+
+
+	
 
 		//Poke holes in the darkness texture
 		if (playerY > -550) {
 			rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
 		}
 		else {
+			//Render night sky to finalbuffer
+			SDL_Rect nightSkyTestRect = { 0,0,SCREEN_WIDTH, SCREEN_HEIGHT / 2 };
+			SDL_SetRenderTarget(renderer, finalBuffer);
+			SDL_RenderClear(renderer);
+			SDL_RenderCopy(renderer, starrySkyTexture, NULL, &nightSkyTestRect);
 			//printf("no more lighting");
 		}
-		//Clear finalBuffer
-		SDL_RenderClear(renderer);
+
+		//Render submarine to finalBuffer
+		//Now let's compose the submarine texture
+		
+		if (xSpeed > 0) {
+		charFlip = SDL_FLIP_NONE;
+	}
+	if (xSpeed < 0) {
+		charFlip = SDL_FLIP_HORIZONTAL;
+	}
+		//now the submarine texture is complete, so we can put it on the finalbuffer
+		SDL_SetRenderTarget(renderer, finalBuffer);
+		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
+
 
 		//Compose lighting layer
-		SDL_SetRenderTarget(renderer, lightingBuffer);
-		SDL_RenderCopy(renderer, flashLightingTexture, NULL, NULL);
 		
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-
-		//set up vertices for cutting the flashlight into a triangle.
-		float angleLeft = mouseAngle - 15;
-		float angleRight = mouseAngle + 15;
-
-		SDL_Vertex vertList[6];
-		vertList[0] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
-		vertList[1] = { {(GAME_WIDTH / 2) - GAME_WIDTH  * cosf(angleLeft * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleLeft * toRad)}         ,  {0, 0, 0, 0}, {1, 1} };
-		vertList[2] = { {(GAME_WIDTH / 2) + GAME_WIDTH  * cosf((angleLeft - 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleLeft - 90) * toRad)}  ,  {0, 0, 0, 0}, {1, 1} };
-
-		vertList[3] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
-		vertList[4] = { {(GAME_WIDTH / 2) - GAME_WIDTH * cosf(angleRight * toRad)         ,  +1 + (GAME_HEIGHT / 2) - GAME_HEIGHT * sinf(angleRight * toRad)}        ,  {0, 0, 0, 0}, {1, 1} };
-		vertList[5] = { {(GAME_WIDTH / 2) + GAME_WIDTH * cosf((angleRight + 90) * toRad)  ,  +1 + (GAME_HEIGHT / 2) + GAME_HEIGHT * sinf((angleRight + 90) * toRad)} ,  {0, 0, 0, 0}, {1, 1} };
-
-		SDL_RenderGeometry(renderer, NULL, vertList, 6, NULL, 0);
-		
-		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 		
 		//render lightingbuffer to final buffer
 		SDL_SetRenderTarget(renderer, finalBuffer);
 		SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
 
-
-		//Now let's compose the submarine texture
-		if (xSpeed > 0) {
-			charFlip = SDL_FLIP_NONE;
-		}
-		if (xSpeed < 0) {
-			charFlip = SDL_FLIP_HORIZONTAL;
-		}
-
-		SDL_SetRenderTarget(renderer, submarineBuffer);
-		SDL_RenderClear(renderer); //clear submarine buffer
-		SDL_RenderCopyEx(renderer, playerSubmarineTexture, NULL, NULL, 0, NULL, charFlip);
-		SDL_RenderCopyEx(renderer, flashlightTexture, NULL, &flashlightPos, mouseAngle, NULL, SDL_FLIP_NONE); //slap on the flashlight texture
-
-		//now the submarine texture is complete, so we can put it on the finalbuffer
-		SDL_SetRenderTarget(renderer, finalBuffer);
-		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
-
 		//render bubbles to final buffer
 		//have to add GW/2
-		ind = bQFront;
-		SDL_Rect bubbleRect;
-		while (ind != bQEnd) {
-			bubbleRect.x = (bubbleQueue[ind].x + GAME_WIDTH / 2 - playerX) * pixelSize;
-			bubbleRect.y = (bubbleQueue[ind].y + GAME_HEIGHT / 2 - playerY) * pixelSize;
-			//printf("bubble disp location: %d,%d \n", bubbleRect.x, bubbleRect.y);
-			bubbleRect.h = 15;
-			bubbleRect.w = 15;
-			if (bubbleQueue[ind].y > -840) {
-				SDL_RenderCopy(renderer, bubbleTexture, NULL, &bubbleRect);
-			}
-			ind = (ind + 1) * (ind < 100); //increment ind or set to 0 if overflows
-		}
+		
 
 		//Add darkness texture to finalBuffer
 		if (playerY > -550) {
 			SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
 		}
 		else {
-			//playerY < -840 is the surface
-			unsigned char bright = (- 550 - playerY)/2;
-			int excess = 0;
-			if (playerY < -790) {
-				excess = ( - 790 - playerY)*pixelSize;
-				//printf("excess: %d", excess);
-				//printf("playerY: %f", playerY);
-				bright = (-550 +790)/2;
+			if (0 == 1) {
+				//IDEA: just make this a giant rectangle that reaches up to -840. there will be then no weird behavior at the surface.
+				//playerY < -840 is the surface
+				unsigned char bright = (-550 - playerY) / 2;
+				int excess = 0;
+				if (playerY < -790) {
+					excess = (-790 - playerY) * pixelSize;
+					//printf("excess: %d", excess);
+					//printf("playerY: %f", playerY);
+					bright = (-550 + 790) / 2;
+				}
+				unsigned char dark = bright / 2;
+				SDL_Vertex sunGradientVert[4];
+				sunGradientVert[0] = { {0,          (float)excess}, {bright, bright, bright, bright}, {1,1} };
+				sunGradientVert[1] = { {SCREEN_WIDTH, (float)excess}, {bright, bright, bright, bright}, {1,1} };
+				sunGradientVert[2] = { {0,          SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
+				sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
+
+
+				int sunGradInd[6] = { 0,1,2,1,2,3 };
+				SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
+				//SDL_SetRenderTarget(renderer, lightingBuffer);
+
+				SDL_RenderGeometry(renderer, NULL, sunGradientVert, 4, sunGradInd, 6);
+				//SDL_SetRenderTarget(renderer, finalBuffer);
+				//SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+
+
+				//render the nightSky
+				//SDL_SetRenderTarget(renderer, NULL);
+				//render stars texture first
+				//SDL_Rect skyRect = { 0, (float)excess - SCREEN_HEIGHT,SCREEN_WIDTH, SCREEN_HEIGHT };
+				//SDL_RenderCopy(renderer, starrySkyTexture, NULL, &skyRect);
+
+				//render moon texture
+				//skyRect = { 50,50,50,50 };
+				//SDL_RenderCopy(renderer, moonTexture, NULL, &skyRect);
+
+				//render clouds
+				//skyRect = { 0,55, SCREEN_WIDTH, 60 };
+				//SDL_Rect cloudRect = { ringMod(playerX,2000), 0, SCREEN_WIDTH, 60 };
+				//SDL_RenderCopy(renderer, cloudTexture, &cloudRect, &skyRect);
+
+				//SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 			}
-			unsigned char dark = bright/2;
-			SDL_Vertex sunGradientVert[4];
-			sunGradientVert[0] = { {0,          (float)excess}, {bright, bright, bright, bright}, {1,1} };
-			sunGradientVert[1] = { {SCREEN_WIDTH, (float)excess}, {bright, bright, bright, bright}, {1,1} };
-			sunGradientVert[2] = { {0,          SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
-			sunGradientVert[3] = { {SCREEN_WIDTH, SCREEN_HEIGHT  }, {dark,   dark,   dark,   bright}, {1,1} };
-
-
-			int sunGradInd[6] = { 0,1,2,1,2,3 };
-			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-			//SDL_SetRenderTarget(renderer, lightingBuffer);
-
-			SDL_RenderGeometry(renderer, NULL, sunGradientVert, 4, sunGradInd, 6);
-			//SDL_SetRenderTarget(renderer, finalBuffer);
-			//SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
-
-			
-			//render the nightSky
-			SDL_SetRenderTarget(renderer, NULL);
-			//render stars texture first
-			SDL_Rect skyRect = { 0, (float)excess - SCREEN_HEIGHT,SCREEN_WIDTH, SCREEN_HEIGHT };
-			SDL_RenderCopy(renderer, starrySkyTexture, NULL, &skyRect);
-			
-			//render moon texture
-			skyRect = { 50,50,50,50 };
-			SDL_RenderCopy(renderer, moonTexture, NULL, &skyRect);
-
-			//render clouds
-			skyRect = { 0,55, SCREEN_WIDTH, 60 };
-			SDL_Rect cloudRect = { ringMod(playerX,2000), 0, SCREEN_WIDTH, 60 };
-			SDL_RenderCopy(renderer, cloudTexture, &cloudRect, &skyRect);
-
-			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 		}
 
 		//Now draw a portion of the window to the real place
@@ -1566,6 +1811,12 @@ int main(int argc, char* args[]) {
 
 	SDL_DestroyTexture(metersTexture);
 
+	SDL_DestroyTexture(starrySkyTexture);
+
+	SDL_DestroyTexture(moonTexture);
+
+	SDL_DestroyTexture(cloudTexture);
+
 	SDL_DestroyRenderer(renderer);
 
 	printf("numAlloc: %d\n", SDL_GetNumAllocations());
@@ -1575,3 +1826,5 @@ int main(int argc, char* args[]) {
 	printf("numAlloc: %d\n", SDL_GetNumAllocations());
 	return 0;
 }
+
+
