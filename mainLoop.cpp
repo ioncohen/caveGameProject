@@ -47,10 +47,10 @@ SDL_Surface* layerTwo = NULL;
 //Renderer to draw textures from GPU
 SDL_Renderer* renderer = NULL;
 
-//Texture to store the lighting falloff
+//Texture to store the lighting falloff. BLENDMODE BLEND
 SDL_Texture* lightingTexture = NULL;
 
-//Texture to store the Strong flashlight
+//Texture to store the Strong flashlight. BLENDMODE NONE
 SDL_Texture* flashLightingTexture = NULL;
 
 //Buffer for composing the lightmap
@@ -498,7 +498,12 @@ SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMod
 			dSquared /= distanceScaleFactor;
 			dSquared++;
 			//if (dSquared < 1) { dSquared = 1; };
-			setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), alpha, (int)255 / (dSquared), lightingSurface);
+			if (alpha == -1) {
+				setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), (int)255 / (dSquared), lightingSurface);
+			}
+			else {
+				setBigPixelNoOffset((int)i, (int)j, (int)255 / (dSquared), (int)255 / (dSquared), alpha, (int)255 / (dSquared), lightingSurface);
+			}
 		}
 	}
 	//Uint32 color = 255 | (uint32_t)255 << 8;
@@ -862,7 +867,8 @@ void initializeEverything() {
 		}
 	}
 
-	lightingTexture = createLightingTexture(100, SDL_BLENDMODE_BLEND, 100);
+	//texture for light emitting from submarine
+	lightingTexture = createLightingTexture(10, SDL_BLENDMODE_ADD, 100);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -882,7 +888,7 @@ void initializeEverything() {
 	//not sure yet if i need this layer
 	lightingBuffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, GAME_WIDTH, GAME_HEIGHT);
 	SDL_SetTextureBlendMode(lightingBuffer, SDL_BLENDMODE_BLEND); //try blend if this doesnt work? but i think it will.
-	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE, 200);
+	flashLightingTexture = createLightingTexture(100, SDL_BLENDMODE_NONE, 255);
 
 	//SDL_ShowCursor(SDL_DISABLE);
 }
@@ -935,7 +941,7 @@ void composeLighting(float mouseAngle) {
 
 	SDL_RenderGeometry(renderer, NULL, vertList, 6, NULL, 0);
 	//SDL_SetTextureAlphaMod(lightingTexture, 160);
-	SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+	//SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
 }
 
 void renderBubbles(int bQFront, int bQEnd, bubble* bubbleQueue) {
@@ -958,35 +964,18 @@ void renderBubbles(int bQFront, int bQEnd, bubble* bubbleQueue) {
 }
 
 void renderClouds(SDL_Rect viewportRect) {
-	float portionRevealed = 0;
 	float camXPosWorld = playerX + viewportRect.x / pixelSize;
 	float camYPosWorld = playerY + viewportRect.y / pixelSize;
-	int numPixRevealed = (- 780 - camYPosWorld); //num pix revealed/300
-	if (numPixRevealed < 0) {
-		numPixRevealed = 0;
-	}
-	portionRevealed = numPixRevealed / 35.0;
-	if (portionRevealed > 1) {
-		portionRevealed = 1;
-	}
 
-	SDL_Rect cloudSourceRect = { 0,0, 2000,60*portionRevealed}; //select whole cloud bar
-	SDL_Rect cloudDestRect = { viewportRect.x, viewportRect.y, 2000 * pixelSize, 300*portionRevealed };//printed from viewport rect
+	SDL_Rect cloudSourceRect = { 0,0, 2000,60}; //select whole cloud bar
+	SDL_Rect cloudDestRect = { viewportRect.x, viewportRect.y, 2000 * pixelSize, 300};//printed from viewport rect
 	//camera x pos in world!
 	
 	camXPosWorld += 1000;
 	camYPosWorld += 860;
 	cloudDestRect.x -= camXPosWorld;
 	cloudDestRect.x = -ringMod(-cloudDestRect.x, 1800*pixelSize);
-	//printf("cdestrec, %d\n", cloudDestRect.x);
-	//if (cloudDestRect.x > 0*pixelSize) {
-	//	printf("looping clouds!\n");
-	//	cloudDestRect.x -= 1800 * pixelSize;
-	//}
-	//else if (cloudDestRect.x < -1800*pixelSize) {
-	//	printf("looping clouds back!\n");
-	//	cloudDestRect.x += 1800*pixelSize;
-	//}
+	
 	cloudDestRect.y -= camYPosWorld;
 	
 	//SDL_Rect cloudDestRect = {-playerX - 1000 + viewportRect.x/pixelSize, (- 820 - playerY + viewportRect.y/pixelSize), pixelSize*2000, 300};
@@ -994,11 +983,10 @@ void renderClouds(SDL_Rect viewportRect) {
 }
 
 void renderNightSky(SDL_Rect viewportRect) {
-	SDL_Rect skySourceRect = {0,0,300,(- 790 - playerY - (float)viewportRect.y/pixelSize)*3};
+	//TODO: add a set renderTarget? to final buffer I think? just incase.
 	//should always be drawn from The top of the screen to water surface.
 	//height should be diff between playerY and water (at -790)
-	SDL_Rect skyDestRect = {viewportRect.x, viewportRect.y, viewportRect.w, (-790 - playerY - (float)viewportRect.y/pixelSize) * pixelSize};
-	SDL_RenderCopy(renderer, starrySkyTexture, &skySourceRect, &skyDestRect);
+	SDL_RenderCopy(renderer, starrySkyTexture, NULL, &viewportRect);
 	//if (playerY < -790) {
 		renderClouds(viewportRect);
 	//}
@@ -1006,7 +994,7 @@ void renderNightSky(SDL_Rect viewportRect) {
 
 void renderTurbulentWater(SDL_Vertex gradientCorner, SDL_Rect *viewportRect) {
 	//height above water level:
-	SDL_SetRenderDrawColor(renderer, 120, 120, 120, 120);
+	SDL_SetRenderDrawColor(renderer, 50, 50, 50, 50);
 
 	SDL_Rect waterRect = { 0,gradientCorner.position.y, pixelSize, 0 };
 	for (int i = 0; i < SCREEN_WIDTH; i += pixelSize) {
@@ -1020,19 +1008,19 @@ void renderTurbulentWater(SDL_Vertex gradientCorner, SDL_Rect *viewportRect) {
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
-void renderSunGradient(SDL_Rect* viewportRect) {
+//TODO: maybe remove blendmode arg if turns out not necessary
+void renderSunGradient(SDL_Rect* viewportRect, SDL_BlendMode bmode) {
 
 	SDL_Vertex sunGradientVertex[4];
-	sunGradientVertex[0] = { {0, ceilf((- 790 - playerY)*pixelSize)}, {120,120,120,120}, {1,1}}; //top left of grad. might have to mult by something
-	sunGradientVertex[1] = { {SCREEN_WIDTH, ceilf(( - 790 - playerY)*pixelSize)}, {120,120,120,120}, {1,1}}; //top right of grad
+	sunGradientVertex[0] = { {0, ceilf((- 790 - playerY)*pixelSize)}, {50,50,50,50}, {1,1}}; //top left of grad. might have to mult by something
+	sunGradientVertex[1] = { {SCREEN_WIDTH, ceilf(( - 790 - playerY)*pixelSize)}, {50,50,50,50}, {1,1}}; //top right of grad
 	sunGradientVertex[2] = { {0,  ceilf((-350 - playerY)*pixelSize)}, {0,0,0,0}, {1,1} }; //
 	sunGradientVertex[3] = { {SCREEN_WIDTH, ceilf((-350 - playerY)*pixelSize)}, {0,0,0,0}, {1,1} };
 	
 	int sunGradInd[6] = { 0,1,2,1,2,3 };
 
-	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawBlendMode(renderer, bmode);
 	SDL_RenderGeometry(renderer, NULL, sunGradientVertex, 4, sunGradInd, 6);
-	
 	renderTurbulentWater(sunGradientVertex[0], viewportRect);
 
 	/*
@@ -1289,7 +1277,7 @@ int main(int argc, char* args[]) {
 		float frameDelta = frameTime.count() / 2'000'000.0;
 
 		float portion = 0;
-		float waterHeight = (1 + SimplexNoise::noise((SCREEN_WIDTH/2 + (playerX * pixelSize + viewportRect.x)) / 100.0, SDL_GetTicks() / 1200.0))/2 - 1;
+		float waterHeight = (1 + SimplexNoise::noise((SCREEN_WIDTH/2 + (playerX * pixelSize + viewportRect.x)) / 100.0, SDL_GetTicks() / 1200.0))/1.5 - 1;
 
 		if (playerY < -839 - waterHeight) {
 			//in the air
@@ -1479,7 +1467,7 @@ int main(int argc, char* args[]) {
 		}
 		//printf("made it past the while loop\n");
 
-		if (tickChange && (xAccel != 0 || yAccel != 0)) {
+		if (tickChange && (pushingSide || pushingVert)) {
 			//printf("making new bubble!\n");
 			bubble newBub;
 			newBub.popTime = SDL_GetTicks() + 4000;
@@ -1523,7 +1511,7 @@ int main(int argc, char* args[]) {
 		if (xSpeed < 0) {
 			charFlip = SDL_FLIP_HORIZONTAL;
 		}
-		//BEGIN RENDERING THE FRAME
+		//start RENDERING THE FRAME
 
 			//breakdown of rendering process
 				//take black texture, poke transparent holes in it. thats darkness texture
@@ -1567,21 +1555,36 @@ int main(int argc, char* args[]) {
 
 
 
-		//DEBUG TESTS
+		//***BEGIN RENDERING***
 		SDL_SetRenderTarget(renderer, finalBuffer);
 		
-		//render starry sky to final buffer
-		renderNightSky(viewportRect);
-		//change this later to draw only in air areas. and shifted so appears stationary
-		//SDL_RenderCopy(renderer, starrySkyTexture, NULL, &viewportRect);
-
-		//render submarine on top of it, opaquely
-		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
-
-		//render lightingbuffer on top, as an add
-		//move this line elsewhere
+		//render sky and clouds to finalBuffer.
+		if (playerY < -550) {
+			renderNightSky(viewportRect);
+			//render opaque, black version of submarine (so you dont see the stars through it later)
+			if (SDL_SetTextureColorMod(submarineBuffer, 0, 0, 0) == -1) {
+				printf("ERROR: couldn't set color mod for submarine texture");
+			}
+			SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
+			
+			if (SDL_SetTextureColorMod(submarineBuffer, 255, 255, 255) == -1) {
+				printf("ERROR: couldn't return color mod for submarine texture");
+			}
+		}
+		if (playerY < -350) {
+			//render water gradient and waves, no blending
+			renderSunGradient(&viewportRect, SDL_BLENDMODE_NONE);
+		}
+		
+		//render lighting
+		//TODO: maybe redo alpha system in createLightingTexture() to work better with this new system
 		SDL_SetTextureBlendMode(lightingBuffer, SDL_BLENDMODE_ADD);
 		SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+		SDL_RenderCopy(renderer, lightingTexture, NULL, NULL);
+
+		SDL_SetTextureAlphaMod(submarineBuffer, 120);
+		SDL_RenderCopy(renderer, submarineBuffer, NULL, &subDestRect);
+		SDL_SetTextureAlphaMod(submarineBuffer, 255);
 
 		//render bubbles onto texture
 		renderBubbles(bQFront, bQEnd, bubbleQueue);
@@ -1592,7 +1595,6 @@ int main(int argc, char* args[]) {
 		}
 
 		//render lightGradient
-		renderSunGradient(&viewportRect);
 		//top of gradient should be at -841?
 		//bottom should be at -550?
 		
@@ -1604,6 +1606,10 @@ int main(int argc, char* args[]) {
 		SDL_SetRenderTarget(renderer, NULL);
 		SDL_RenderCopy(renderer, finalBuffer, &viewportRect, NULL);
 		
+		//DEBUG
+		//SDL_RenderClear(renderer);
+		//SDL_RenderCopy(renderer, lightingBuffer, NULL, NULL);
+
 		//finally update the screen
 		SDL_RenderPresent(renderer);
 		
