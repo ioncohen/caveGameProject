@@ -862,7 +862,7 @@ void initializeEverything() {
 		}
 	}
 
-	lightingTexture = createLightingTexture(60, SDL_BLENDMODE_BLEND, 150);
+	lightingTexture = createLightingTexture(100, SDL_BLENDMODE_BLEND, 100);
 
 	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
@@ -1289,19 +1289,21 @@ int main(int argc, char* args[]) {
 		float frameDelta = frameTime.count() / 2'000'000.0;
 
 		float portion = 0;
-		if (playerY < -839) {
+		float waterHeight = (1 + SimplexNoise::noise((SCREEN_WIDTH/2 + (playerX * pixelSize + viewportRect.x)) / 100.0, SDL_GetTicks() / 1200.0))/2 - 1;
+
+		if (playerY < -839 - waterHeight) {
 			//in the air
 			if (ySpeed < -0.3) {
 				ySpeed = -0.3;
 			}
 			//portion !!underwater!!: how far below 844 we are
-			portion = (844 + playerY) / 6;
+			portion = (844 + waterHeight + playerY) / 6;
 			if (portion < 0) {
 				portion = 0;
 			}
 			yAccel = 0.001 - portion / 500;
 			//frameDelta This
-			if (playerY > -844) {
+			if (playerY > -844 - waterHeight) {
 				ySpeed *= 1 - 0.001;
 				xSpeed *= 1 - 0.001;
 				if (pushingUp) {
@@ -1313,7 +1315,7 @@ int main(int argc, char* args[]) {
 			}
 
 		}
-		else if (prevY < -841) {
+		else if (prevY < -841 - waterHeight) {
 			yAccel = 0;
 			xAccel = 0;
 		}
@@ -1322,10 +1324,10 @@ int main(int argc, char* args[]) {
 		ySpeed += yAccel * frameDelta;
 
 		//TODO: figure out a way to frameDelta this
-		if (prevY > -841 && xAccel == 0) {
+		if (prevY > -841 - waterHeight  && xAccel == 0) {
 			xSpeed *= 1 - frameDelta / 200;
 		}
-		if (prevY > -841 && yAccel == 0) {
+		if (prevY > -841 - waterHeight && yAccel == 0) {
 			ySpeed *= 1 - frameDelta / 200;
 		}
 
