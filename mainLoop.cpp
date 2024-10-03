@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <string.h>
 #include <chrono>
+#include <unordered_map>
 
 #define PI 3.14159265
 
@@ -130,11 +131,21 @@ float getCaveWidth(float y, float x) {
 	return caveWidth;
 }
 
+std::unordered_map<int, std::unordered_map<int, bool>> explosions;
+const int expGrain = 1;
+const int expSize = 8;
+
+
 //returns 1 if open water, 0 if cave?
 bool caveNoise(float x, float y) {
 	//generate the width modifier from y value.
 	//return the noise check
-	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(y , x) > noiseCutoffLevel;
+	float explosionMod = 0;
+	if (explosions.find(round(x/expGrain)) != explosions.end() && explosions[round(x/expGrain)][round(y/expGrain)] == true) {
+		explosionMod = 1;
+		printf("explosion detected here!!!!");
+	}
+	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(y , x) + explosionMod > noiseCutoffLevel;
 }
 
 //mod method that loops around for negative numbers
@@ -1109,6 +1120,8 @@ int main(int argc, char* args[]) {
 	SDL_RendererFlip charFlip = SDL_FLIP_NONE;
 	
 	int frameCount = 0;
+
+	int hashMapSize = 0;
 	
 	initializeEverything();
 
@@ -1129,6 +1142,8 @@ int main(int argc, char* args[]) {
 	bool pushingUp = false;
 	bool pushingRight = false;
 	bool pushingDown = false;
+	bool explode = false;
+	bool explodePrev = false;
 
 	const int fpsWindowSize = 100;
 
@@ -1146,6 +1161,9 @@ int main(int argc, char* args[]) {
 	//index of newest bubble
 	int bQEnd = 0;
 	bubble bubbleQueue[100] = {};
+
+	//hashmap to store explosions:
+	//std::unordered_map<int, std::unordered_map<int, bool>> explosions;
 
 	bool tickChange = 1;
 	Uint32 lastTickChange = SDL_GetTicks();
@@ -1192,7 +1210,9 @@ int main(int argc, char* args[]) {
 				case SDLK_RIGHT:
 					pushingRight = true;
 					break;
-
+				case SDLK_q:
+					explode = true;
+					break;
 				default:
 					break;
 				}
@@ -1222,11 +1242,63 @@ int main(int argc, char* args[]) {
 					pushingRight = false;
 					xAccel = 0;
 					break;
+				case SDLK_q:
+					explode = false;
+					break;
 				default:
 					break;
 				}
 			}
 		}
+
+		//now do an explosion (just for testing!!!)
+		//maybe do a set for the second one instead of a map? figure out later. prob not cause should store size as well
+		//OK I WANT TO MAKE IT SO THAT CHECKING THE THING IS SUPER EASY. SO I SHOULD MAKE THE EXPLOSIONS SMALL, BUT HAVE THIS PIECE OF CODE MAKE A LOT OF THEM. wILL TAKE MORE TIME DURING EXPLOSION, BUT THEN CHECKING AFTER WILL BE SUPER EASY.
+		if (explode && !explodePrev) {
+			printf("making explosion!!!1!!");
+			// switch bool 
+			for (float i = playerX + (GAME_WIDTH / 2) - expGrain*expSize - 0.5; i < playerX + (GAME_WIDTH / 2) + expGrain * expSize; i+= expGrain) {
+				for (float j = playerY + (GAME_HEIGHT / 2) - expGrain * expSize- 0.5; j < playerY + (GAME_HEIGHT / 2) + expGrain * expSize; j += expGrain) {
+					if ((abs(playerY +(GAME_HEIGHT / 2) - j) * abs(playerY + (GAME_HEIGHT / 2) - j)) + (abs(playerX + (GAME_WIDTH / 2) - i) * abs(playerX + (GAME_WIDTH / 2) - i)) < expGrain * expSize * expGrain * expSize + 0.5) {
+						if (explosions.find(round(i / expGrain)) == explosions.end()) {
+							std::unordered_map<int, bool> newMap;
+							explosions[round(i / expGrain)] = newMap;
+							printf("added new map!!!");
+						}
+						else {
+							printf("no new map!");
+						}
+						if (explosions[round(i / expGrain)][round(j / expGrain)] != true) {
+							explosions[round(i / expGrain)][round(j / expGrain)] = true;
+							hashMapSize += 1;
+						}
+					}
+				}
+			}
+			/*
+			if (explosions.find(round((playerX + GAME_WIDTH/2)/8)) == explosions.end()) {
+				std::unordered_map<int, bool> newMap;
+				explosions[round((playerX + GAME_WIDTH/2)/ 8)] = newMap;
+				printf("added new map!!!");
+			}
+			else {
+				printf("no new map!");
+			}
+			explosions[round((playerX + GAME_WIDTH/2) / 8)][round((playerY + GAME_HEIGHT/2)/8)] = true;
+			*/
+		}
+		explodePrev = explode;
+
+		//MAYBE IF WITH THE OTHER SO DONT RERELOAD.
+		if (explode) {
+			//refresh all the cave terrain?
+			for (int i = (GAME_WIDTH / 2) - expGrain * expSize - 1; i < (GAME_WIDTH / 2) + expGrain * expSize+ 1; i++) {
+				for (int j = (GAME_HEIGHT / 2) - expGrain * expSize - 1; j < (GAME_HEIGHT / 2) + expGrain * expSize + 1; j++) {
+					caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
+				}
+			}
+		}
+
 
 		//now adjust movement speed
 		bool pushingSide = pushingLeft || pushingRight;
@@ -1267,7 +1339,8 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		printf("hashmapSize : %d\n", hashMapSize);
 
 		newTime = std::chrono::steady_clock::now();
 		frameTime = std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime);
