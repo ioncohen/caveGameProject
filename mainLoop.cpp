@@ -134,7 +134,7 @@ struct bubble {
 
 //idea: width gets smaller before it gets larger, so theres small paths down into the caves instead of patches.
 float getCaveWidth(float y, float x) {
-	if (y < -400 + 20*SimplexNoise::noise(x/50)) { return 1; }
+	if (y < -400 + 20*SimplexNoise::noise(x/50.0)) { return 1; }
 	float caveWidth = pow(1.0000000001, (-y*y*y*y)) - 0.4;
 	
 		//float caveWidth = 0.6 - y / 500;
@@ -155,7 +155,7 @@ bool caveNoise(float x, float y) {
 	//generate the width modifier from y value.
 	//return the noise check
 	float explosionMod = 0;
-	if (explosions.find(std::pair<int,int>(round(x / expGrain), round(y/ expGrain))) != explosions.end()) {
+	if (explosions.find(std::pair<int,int>(floor(x / expGrain), floor(y/ expGrain))) != explosions.end()) {
 		explosionMod = 1;
 		printf("explosion detected here!!!!");
 	}
@@ -1028,6 +1028,13 @@ void renderTurbulentWater(SDL_Vertex gradientCorner, SDL_Rect *viewportRect) {
 		waterRect.y -= floor(waterHeight);
 		waterRect.h = floor(waterHeight);
 		SDL_RenderFillRect(renderer, &waterRect);
+		SDL_SetRenderDrawColor(renderer, 80, 80, 80, 80);
+		waterRect.y -= 2;
+		waterRect.h = 2;
+		SDL_RenderFillRect(renderer, &waterRect);
+		SDL_SetRenderDrawColor(renderer, 50, 50, 50, 50);
+
+
 		waterRect.y = gradientCorner.position.y;
 	}
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
@@ -1263,45 +1270,7 @@ int main(int argc, char* args[]) {
 			}
 		}
 
-		//now do an explosion (just for testing!!!)
-		//maybe do a set for the second one instead of a map? figure out later. prob not cause should store size as well
-		//OK I WANT TO MAKE IT SO THAT CHECKING THE THING IS SUPER EASY. SO I SHOULD MAKE THE EXPLOSIONS SMALL, BUT HAVE THIS PIECE OF CODE MAKE A LOT OF THEM. wILL TAKE MORE TIME DURING EXPLOSION, BUT THEN CHECKING AFTER WILL BE SUPER EASY.
-		if (explode && !explodePrev) {
-			printf("making explosion!!!1!!");
-			// switch bool 
-			for (float i = playerX + (GAME_WIDTH / 2) - expGrain*expSize - 0.5; i < playerX + (GAME_WIDTH / 2) + expGrain * expSize; i+= expGrain) {
-				for (float j = playerY + (GAME_HEIGHT / 2) - expGrain * expSize- 0.5; j < playerY + (GAME_HEIGHT / 2) + expGrain * expSize; j += expGrain) {
-					if ((abs(playerY +(GAME_HEIGHT / 2) - j) * abs(playerY + (GAME_HEIGHT / 2) - j)) + (abs(playerX + (GAME_WIDTH / 2) - i) * abs(playerX + (GAME_WIDTH / 2) - i)) < expGrain * expSize * expGrain * expSize + 0.5) {
-						if (explosions.find(std::pair<int,int>(round(i / expGrain), round(j / expGrain))) == explosions.end()) {
-							explosions[std::pair<int, int>(round(i / expGrain), round(j / expGrain))] = 1;
-							printf("added new block!");
-						}
-					}
-				}
-			}
-			/*
-			if (explosions.find(round((playerX + GAME_WIDTH/2)/8)) == explosions.end()) {
-				std::unordered_map<int, bool> newMap;
-				explosions[round((playerX + GAME_WIDTH/2)/ 8)] = newMap;
-				printf("added new map!!!");
-			}
-			else {
-				printf("no new map!");
-			}
-			explosions[round((playerX + GAME_WIDTH/2) / 8)][round((playerY + GAME_HEIGHT/2)/8)] = true;
-			*/
-		}
-		explodePrev = explode;
-
-		//MAYBE IF WITH THE OTHER SO DONT RERELOAD.
-		if (explode) {
-			//refresh all the cave terrain?
-			for (int i = (GAME_WIDTH / 2) - expGrain * expSize - 1; i < (GAME_WIDTH / 2) + expGrain * expSize+ 1; i++) {
-				for (int j = (GAME_HEIGHT / 2) - expGrain * expSize - 1; j < (GAME_HEIGHT / 2) + expGrain * expSize + 1; j++) {
-					caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
-				}
-			}
-		}
+		
 
 
 		//now adjust movement speed
@@ -1491,7 +1460,7 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = istart; i < iend; i++) {
 			for (int j = 0; j < GAME_HEIGHT; j++) {
-				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
+				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + floor(playerX), j + floor(playerY));
 			}
 		}
 
@@ -1507,9 +1476,52 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = 0; i < GAME_WIDTH; i++) {
 			for (int j = jstart; j < jend; j++) {
-				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + playerX, j + playerY);
+				caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + floor(playerX), j + floor(playerY));
 			}
 		}
+
+		//now do an explosion (just for testing!!!)
+		//maybe do a set for the second one instead of a map? figure out later. prob not cause should store size as well
+		//OK I WANT TO MAKE IT SO THAT CHECKING THE THING IS SUPER EASY. SO I SHOULD MAKE THE EXPLOSIONS SMALL, BUT HAVE THIS PIECE OF CODE MAKE A LOT OF THEM. wILL TAKE MORE TIME DURING EXPLOSION, BUT THEN CHECKING AFTER WILL BE SUPER EASY.
+		if (explode && !explodePrev) {
+			printf("making explosion!!!1!!");
+			// switch bool 
+			for (int i = floor(playerX) + (GAME_WIDTH / 2) - expGrain * expSize; i < floor(playerX) + (GAME_WIDTH / 2) + expGrain * expSize; i += expGrain) {
+				for (int j = floor(playerY) + (GAME_HEIGHT / 2) - expGrain * expSize; j < floor(playerY) + (GAME_HEIGHT / 2) + expGrain * expSize; j += expGrain) {
+					if ((abs(floor(playerY) + (GAME_HEIGHT / 2) - j) * abs(floor(playerY) + (GAME_HEIGHT / 2) - j)) + (abs(floor(playerX) + (GAME_WIDTH / 2) - i) * abs(floor(playerX) + (GAME_WIDTH / 2) - i)) < expGrain * expSize * expGrain * expSize - 1) {
+						//todo: optimise to not redo find twice (in cave noise and out)
+						if (!caveNoise(i, j) && explosions.find(std::pair<int, int>(floor(i / expGrain), floor(j / expGrain))) == explosions.end()) {
+							explosions[std::pair<int, int>(floor(i / expGrain), floor(j / expGrain))] = 1;
+							printf("added new block!");
+						}
+					}
+				}
+			}
+			/*
+			if (explosions.find(round((playerX + GAME_WIDTH/2)/8)) == explosions.end()) {
+				std::unordered_map<int, bool> newMap;
+				explosions[round((playerX + GAME_WIDTH/2)/ 8)] = newMap;
+				printf("added new map!!!");
+			}
+			else {
+				printf("no new map!");
+			}
+			explosions[round((playerX + GAME_WIDTH/2) / 8)][round((playerY + GAME_HEIGHT/2)/8)] = true;
+			*/
+		}
+		explodePrev = explode;
+
+		//MAYBE IF WITH THE OTHER SO DONT RERELOAD.
+		if (explode) {
+			//refresh all the cave terrain?
+			for (int i = (GAME_WIDTH / 2) - expGrain * expSize - 1; i < (GAME_WIDTH / 2) + expGrain * expSize + 1; i++) {
+				for (int j = (GAME_HEIGHT / 2) - expGrain * expSize - 1; j < (GAME_HEIGHT / 2) + expGrain * expSize + 1; j++) {
+					caveTerrain[ringMod(i + bufferOffsetX, GAME_WIDTH)][ringMod(j + bufferOffsetY, GAME_HEIGHT)] = caveNoise(i + floor(playerX), j + floor(playerY));
+				}
+			}
+		}
+
+
 
 		//calculate subpixel offset for frame drawing purposes
 		float subPixelDiffX = playerX - floor(playerX);
