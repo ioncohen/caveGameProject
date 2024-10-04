@@ -6,6 +6,19 @@
 #include <string.h>
 #include <chrono>
 #include <unordered_map>
+#include <boost/functional/hash.hpp>
+
+struct hashPair
+{
+	std::size_t operator() (const std::pair<int,int>& m) const
+	{
+		std::size_t s = 0;
+		boost::hash_combine(s, m.first);
+		boost::hash_combine(s, m.second);
+		return s;
+	}
+};
+
 
 #define PI 3.14159265
 
@@ -131,7 +144,8 @@ float getCaveWidth(float y, float x) {
 	return caveWidth;
 }
 
-std::unordered_map<int, std::unordered_map<int, bool>> explosions;
+//basically limits map size to 2 billion. is that ok? probably.
+std::unordered_map<std::pair<int,int>, short, hashPair> explosions;
 const int expGrain = 1;
 const int expSize = 8;
 
@@ -141,7 +155,7 @@ bool caveNoise(float x, float y) {
 	//generate the width modifier from y value.
 	//return the noise check
 	float explosionMod = 0;
-	if (explosions.find(round(x/expGrain)) != explosions.end() && explosions[round(x/expGrain)][round(y/expGrain)] == true) {
+	if (explosions.find(std::pair<int,int>(round(x / expGrain), round(y/ expGrain))) != explosions.end()) {
 		explosionMod = 1;
 		printf("explosion detected here!!!!");
 	}
@@ -1120,8 +1134,6 @@ int main(int argc, char* args[]) {
 	SDL_RendererFlip charFlip = SDL_FLIP_NONE;
 	
 	int frameCount = 0;
-
-	int hashMapSize = 0;
 	
 	initializeEverything();
 
@@ -1260,17 +1272,9 @@ int main(int argc, char* args[]) {
 			for (float i = playerX + (GAME_WIDTH / 2) - expGrain*expSize - 0.5; i < playerX + (GAME_WIDTH / 2) + expGrain * expSize; i+= expGrain) {
 				for (float j = playerY + (GAME_HEIGHT / 2) - expGrain * expSize- 0.5; j < playerY + (GAME_HEIGHT / 2) + expGrain * expSize; j += expGrain) {
 					if ((abs(playerY +(GAME_HEIGHT / 2) - j) * abs(playerY + (GAME_HEIGHT / 2) - j)) + (abs(playerX + (GAME_WIDTH / 2) - i) * abs(playerX + (GAME_WIDTH / 2) - i)) < expGrain * expSize * expGrain * expSize + 0.5) {
-						if (explosions.find(round(i / expGrain)) == explosions.end()) {
-							std::unordered_map<int, bool> newMap;
-							explosions[round(i / expGrain)] = newMap;
-							printf("added new map!!!");
-						}
-						else {
-							printf("no new map!");
-						}
-						if (explosions[round(i / expGrain)][round(j / expGrain)] != true) {
-							explosions[round(i / expGrain)][round(j / expGrain)] = true;
-							hashMapSize += 1;
+						if (explosions.find(std::pair<int,int>(round(i / expGrain), round(j / expGrain))) == explosions.end()) {
+							explosions[std::pair<int, int>(round(i / expGrain), round(j / expGrain))] = 1;
+							printf("added new block!");
 						}
 					}
 				}
@@ -1340,7 +1344,7 @@ int main(int argc, char* args[]) {
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
 		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
-		printf("hashmapSize : %d\n", hashMapSize);
+		printf("actualHMSize: %d\n", explosions.size());
 
 		newTime = std::chrono::steady_clock::now();
 		frameTime = std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime);
