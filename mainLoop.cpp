@@ -800,7 +800,7 @@ int marchingSlope(float x, float y) {
 	case 6:
 		//0110: B and C: bot right, top left)
 		printf("error: messed up geometry");
-		return -1;
+		return 16;
 	case 7:
 		//0111: BCD, all but bot left
 		return(x - ax + y - ay > 0.5)*(cornerMask);
@@ -825,7 +825,7 @@ int marchingSlope(float x, float y) {
 	case 15:
 		//1111 add
 		printf("error: messed up geometry (deep collision) \n");
-		return -1;
+		return 16;
 	}	
 	printf("error: marching squares no case?");
 	return -1;
@@ -1351,7 +1351,7 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 		//printf("actualHMSize: %d\n", explosions.size());
 
 		newTime = std::chrono::steady_clock::now();
@@ -1411,11 +1411,16 @@ int main(int argc, char* args[]) {
 		playerY += ySpeed * frameDelta;
 
 		int collisionCheck = 0;
+
 		float temp = xSpeed;
+		
+		float rayCastModifier = 1;
 
 		//perform collision check on 4 corners
-		for (int i = -2; i <= 2; i += 4) {
-			for (int j = -2; j <= 2; j += 4) {
+		int i = -2;
+		int j = -2;
+		for (i = -2; i <= 2; i += 4) {
+			for (j = -2; j <= 2; j += 4) {
 				collisionCheck = marchingSlope(playerX + i + GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
 				if (collisionCheck > 0) {
 					goto collided;
@@ -1429,9 +1434,10 @@ int main(int argc, char* args[]) {
 		//ok there's been a collision
 		//printf("%d ", collisionCheck);
 		//undo previous movement. Now we are guaranteed (?) to be in open space
-		playerX -= xSpeed * frameDelta;
-		playerY -= ySpeed * frameDelta;
-
+		if (collisionCheck != 0 && collisionCheck != 16) {
+			playerX -= xSpeed * frameDelta;
+			playerY -= ySpeed * frameDelta;
+		}
 		switch (collisionCheck) {
 		case 1:
 		case 7:
@@ -1460,6 +1466,30 @@ int main(int argc, char* args[]) {
 		case 9:
 		case 6:
 		case 15:
+			break;
+		case 16:
+			//deep collision, backwards raycast to find a good option.
+			rayCastModifier *= 0.5;
+			printf("playerX!: %f\n", playerX);
+			printf("playerY!: %f\n", playerY);
+			printf("INN!: rayCastModifier: %f\n", rayCastModifier);
+			playerX -= rayCastModifier * xSpeed * frameDelta;
+			playerY -= rayCastModifier * ySpeed * frameDelta;
+			collisionCheck = marchingSlope(playerX + i + GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
+			goto collided;
+		case 0:
+			//deep collision, reverted. go forwards.
+			if (rayCastModifier < 0.0001) {
+				break;
+			}
+			rayCastModifier *= 0.5;
+			printf("playerX: %f\n", playerX);
+			printf("playerY: %f\n", playerY);
+			printf("OUT!: rayCastModifier: %f\n", rayCastModifier);
+			playerX += rayCastModifier * xSpeed * frameDelta;
+			playerY += rayCastModifier * ySpeed * frameDelta;
+			collisionCheck = marchingSlope(playerX + i + GAME_WIDTH / 2, playerY + j + GAME_WIDTH / 2);
+			goto collided;
 			break;
 		}
 
