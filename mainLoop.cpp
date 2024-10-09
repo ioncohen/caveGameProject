@@ -177,7 +177,7 @@ void set_pixel(SDL_Surface* surface, int x, int y, uint8_t red, uint8_t green, u
 }
 
 //pixel size constant
-int pixelSize = 10;
+const int pixelSize = 10;
 int pixThick = 1;
 
 SDL_Rect block;
@@ -402,6 +402,7 @@ void textureStreamLighting(int lightSourceX, int lightSourceY, float mouseAngle)
 
 	SDL_LockTextureToSurface(darknessTexture, NULL, &tempSurface);
 	SDL_FillRect(tempSurface, NULL, 255);
+
 	for (int i = 0; i < numRays; i++) {
 		float x = lightSourceX;
 		float y = lightSourceY;
@@ -420,11 +421,16 @@ void textureStreamLighting(int lightSourceX, int lightSourceY, float mouseAngle)
 			countSteps++;
 		}
 		if (!OOB((int)x, (int)y) && countSteps < 50) {
-			block.x = (int)x * pixelSize - subPixelOffsetX;
-			block.y = (int)y * pixelSize - subPixelOffsetY;
-			SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-			SDL_RenderFillRect(renderer, &block);
-
+			uint8_t bright = 0;
+			if (abs(i - mouseAngle) < 15 || abs(i - 360 - mouseAngle) < 15) {
+				bright = 255 / ((countSteps * countSteps) * (1.0 / 480) + 1);
+			}
+			else {
+				bright = 150 / ((countSteps * countSteps) * (1.0 / 480) + 1);
+			}
+			Uint8* target_pixel = (Uint8*)tempSurface->pixels + (int)y * tempSurface->pitch + (int)x * 4;
+			Uint32 pixel = bright | ((Uint32)bright << 8) | ((Uint32)bright << 16) | ((Uint32)bright << 24);
+			*(Uint32*)target_pixel = pixel;
 			// previous wall light func, maybe reuse for this^
 			//setBigPixel((int)x, (int)y, (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
 		}
@@ -934,7 +940,7 @@ void initializeEverything() {
 	//texture for light emitting from submarine
 	lightingTexture = createLightingTexture(10, SDL_BLENDMODE_ADD, 100);
 
-	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+	darknessTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, GAME_WIDTH, GAME_HEIGHT);
 	SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
 
 	loadImages();
@@ -974,8 +980,8 @@ void clearBuffers() {
 
 	//special clear for darkness texture
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_SetRenderTarget(renderer, darknessTexture);
-	SDL_RenderClear(renderer);
+	//SDL_SetRenderTarget(renderer, darknessTexture);
+	//SDL_RenderClear(renderer);
 }
 
 void composeSubmarine(SDL_RendererFlip charFlip, SDL_Rect* flashlightPos, float mouseAngle) {
@@ -1351,7 +1357,7 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 		//printf("actualHMSize: %d\n", explosions.size());
 
 		newTime = std::chrono::steady_clock::now();
@@ -1676,7 +1682,7 @@ int main(int argc, char* args[]) {
 
 		//compose darkness texture
 		if (playerY > -550) {
-			rowByRowLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
+			textureStreamLighting(GAME_WIDTH / 2, GAME_HEIGHT / 2, mouseAngle);
 		}
 		//ok now everything seems to be composed.
 		//lets try layering
@@ -1720,7 +1726,12 @@ int main(int argc, char* args[]) {
 
 		//render darknessTexture
 		if (playerY > -550) {
-			SDL_RenderCopy(renderer, darknessTexture, NULL, NULL);
+			SDL_Rect darkDestRect;
+			darkDestRect.x = pixelSize - subPixelOffsetX;
+			darkDestRect.y = pixelSize - subPixelOffsetY;
+			darkDestRect.w = SCREEN_WIDTH - pixelSize;
+			darkDestRect.h = SCREEN_HEIGHT - pixelSize;
+			SDL_RenderCopy(renderer, darknessTexture, NULL, &darkDestRect);
 		}
 
 		//render lightGradient
