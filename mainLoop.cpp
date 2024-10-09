@@ -164,11 +164,8 @@ bool caveNoise(float x, float y) {
 
 //mod method that loops around for negative numbers
 int ringMod(int a, int b) {
-	if (a >= 0) {
-		return a % b;
-	} else {
-		return b + a % b;
-	}
+	int ret = a % b;
+	return (ret < 0) ? ret + b : ret;
 }
 
 //method to set a pixel
@@ -395,7 +392,50 @@ void fillTraceBackTable() {
 int clamp(int value) {
 	return value * (value >= 0);
 }
- 
+
+const int numRays = 360;
+//idea: reduce darkness texture resolution so that 1 pixel is the equivalent of a big pixel. Then the pixel data will be easy
+void textureStreamLighting(int lightSourceX, int lightSourceY, float mouseAngle) {
+	void* pixels = NULL;
+	int pitch = 0;
+	SDL_Surface* tempSurface;
+
+	SDL_LockTextureToSurface(darknessTexture, NULL, &tempSurface);
+	SDL_FillRect(tempSurface, NULL, 255);
+	for (int i = 0; i < numRays; i++) {
+		float x = lightSourceX;
+		float y = lightSourceY;
+
+		float xStep = cos(2 * PI * i / numRays);
+		float yStep = sin(2 * PI * i / numRays);
+		int countSteps = 0;
+		while (countSteps < 50 && !OOB((int)x, (int)y) && caveTerrain[ringMod((int)(x)+bufferOffsetX, GAME_WIDTH)][ringMod((int)(y)+bufferOffsetY, GAME_HEIGHT)]) {
+			Uint8* target_pixel = (Uint8*)tempSurface->pixels + (int)y * tempSurface->pitch + (int)x * 4;
+			*(Uint32*)target_pixel = 0;
+
+
+			SDL_RenderFillRect(renderer, &block);
+			x += xStep;
+			y += yStep;
+			countSteps++;
+		}
+		if (!OOB((int)x, (int)y) && countSteps < 50) {
+			block.x = (int)x * pixelSize - subPixelOffsetX;
+			block.y = (int)y * pixelSize - subPixelOffsetY;
+			SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+			SDL_RenderFillRect(renderer, &block);
+
+			// previous wall light func, maybe reuse for this^
+			//setBigPixel((int)x, (int)y, (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), (uint8_t)(255 / distFromCenter1), 255, layerTwo);
+		}
+	}
+
+
+	SDL_UnlockTexture(darknessTexture);
+}
+
+
+
 //idea, use memcopy to fill occluded array, then propagate 1s out? or at least then you dont have to check
 //maybe redo the pixtraceback arrays to be one big array that returns a tuple. That way dont have to calculate the indexes 4 times.
 //how can we change the spiral to work with multiple light sources? it will already work with any light distnce.
@@ -548,7 +588,6 @@ SDL_Texture* createLightingTexture(const float distanceScaleFactor, SDL_BlendMod
 	return result;
 }
 
-const int numRays = 360;
 void rayBasedLighting(int lightSourceX, int lightSourceY) {
 	//should i do one ray at a time? or all at once?
 	//one
@@ -1312,8 +1351,8 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
-		printf("actualHMSize: %d\n", explosions.size());
+		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		//printf("actualHMSize: %d\n", explosions.size());
 
 		newTime = std::chrono::steady_clock::now();
 		frameTime = std::chrono::duration_cast<std::chrono::microseconds>(newTime - oldTime);
@@ -1527,8 +1566,9 @@ int main(int argc, char* args[]) {
 		float subPixelDiffX = playerX - floor(playerX);
 		float subPixelDiffY = playerY - floor(playerY);
 
-		subPixelOffsetX = round(subPixelDiffX * (pixelSize - 1));
-		subPixelOffsetY = round(subPixelDiffY * (pixelSize - 1));
+		subPixelOffsetX = floor(subPixelDiffX * pixelSize);
+		subPixelOffsetY = floor(subPixelDiffY * pixelSize);
+		//printf("subDiff, subOff: %d, %f, \n", subPixelOffsetX, subPixelDiffX);
 
 
 		//bubble processing
