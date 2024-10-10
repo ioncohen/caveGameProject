@@ -1120,20 +1120,10 @@ void renderSunGradient(SDL_Rect* viewportRect, SDL_BlendMode bmode) {
 
 }
 
-void renderRedFilter(int collisionCheck, float* healthRemaining, float* redSlider, float frameDelta) {
-	if (collisionCheck > 0) {
-		*healthRemaining -= 2;
-		*redSlider = 150;
-	}
-	else {
-		*redSlider -= 1 * frameDelta;
-		if (*redSlider < 0) {
-			*redSlider = 0;
-		}
-	}
-	if (*redSlider > 0) {
+void renderRedFilter(float redSlider) {
+	if (redSlider > 0) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-		SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int)*redSlider);
+		SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int)redSlider);
 		SDL_RenderFillRect(renderer, NULL);
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
@@ -1213,6 +1203,7 @@ int main(int argc, char* args[]) {
 	std::chrono::steady_clock::duration frameTime;
 
 	float redSlider = 0;
+	float crashDrainRate = 0;
 
 	//index of oldest bubble
 	int bQFront = 0;
@@ -1351,7 +1342,7 @@ int main(int argc, char* args[]) {
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
-		printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
+		//printf("FPS: % d\n", (fpsWindowSize*1000)/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1) % fpsWindowSize]));
 		//printf("actualHMSize: %d\n", explosions.size());
 
 		newTime = std::chrono::steady_clock::now();
@@ -1416,6 +1407,7 @@ int main(int argc, char* args[]) {
 		
 		float rayCastModifier = 1;
 
+		float crashSeverity = 0;
 		//perform collision check on 4 corners
 		int i = -2;
 		int j = -2;
@@ -1437,6 +1429,14 @@ int main(int argc, char* args[]) {
 		if (collisionCheck != 0 && collisionCheck != 16) {
 			playerX -= xSpeed * frameDelta;
 			playerY -= ySpeed * frameDelta;
+			crashSeverity = std::min(360*(std::sqrt(xSpeed * xSpeed + ySpeed * ySpeed)), 255.0f);
+			crashSeverity = crashSeverity < 30 ? 0 : crashSeverity;
+			crashSeverity = crashSeverity > 255 ? 255 : crashSeverity;
+			redSlider += crashSeverity;
+			redSlider = redSlider > 255 ? 255 : redSlider;
+			crashDrainRate = redSlider / 255;
+			printf("crashSeverity: %f\n", crashSeverity);
+			printf("crashDrainRate: %f\n", crashDrainRate);
 		}
 		switch (collisionCheck) {
 		case 1:
@@ -1757,8 +1757,11 @@ int main(int argc, char* args[]) {
 		//top of gradient should be at -841?
 		//bottom should be at -550?
 		
-
-		renderRedFilter(collisionCheck, &healthRemaining, &redSlider, frameDelta);
+		redSlider -= crashDrainRate * frameDelta;
+		if (redSlider < 0) {
+			redSlider = 0;
+		}
+		renderRedFilter(redSlider);
 
 
 		//render viewport to screen 
