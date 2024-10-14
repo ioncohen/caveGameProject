@@ -2,7 +2,9 @@
 This is an open world, exploration video game currently being developped by Aaron Cohen. The game uses a custom game engine written in C++, using SDL2 as a graphics API. It is planned to be released on steam in early access by Fall 2025.
 
 ## Gameplay Demo
-https://github.com/user-attachments/assets/6cb3dec2-5568-42be-8d8d-ba5d1402f989
+https://github.com/user-attachments/assets/a4032ac7-2bc5-4353-bfc4-840ee5c8f926
+
+
 
 ## Current Features
 * Procedurally generated open world terrain with multiple biomes
