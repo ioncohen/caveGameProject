@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
+
 struct hashPair
 {
 	std::size_t operator() (const std::pair<int,int>& m) const
@@ -24,6 +25,10 @@ struct hashPair
 
 const float toRad = 0.01745329251;
 const float toDeg = 57.2957795131;
+
+const int breathConstant = 15;
+const int breathFrequency = 20;
+//const int breathAmplitude = 30;
 
 //THINGS TODO:
 //		fix input direction
@@ -47,7 +52,7 @@ const int GAME_HEIGHT = 100;
 
 const int MAX_DIM = GAME_WIDTH - (GAME_WIDTH - GAME_HEIGHT) * (GAME_HEIGHT > GAME_WIDTH);
 
-const float ACCEL_RATE = 0.001;
+const float ACCEL_RATE = 0.0005;
 
 //The window we'll be rendering to
 SDL_Window* window = NULL;
@@ -1120,11 +1125,20 @@ void renderSunGradient(SDL_Rect* viewportRect, SDL_BlendMode bmode) {
 
 }
 
-void renderRedFilter(float redSlider) {
-	if (redSlider > 0) {
+void renderFilters(float redSlider, float blackSlider) {
+	if (redSlider > 0 || blackSlider > 0) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+		//draw red filter
 		SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int)redSlider);
 		SDL_RenderFillRect(renderer, NULL);
+
+		//draw black filter
+		if (blackSlider > 255) {
+			blackSlider = 255;
+		}
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, (int)blackSlider);
+		SDL_RenderFillRect(renderer, NULL);
+
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
 }
@@ -1132,13 +1146,16 @@ void renderRedFilter(float redSlider) {
 int main(int argc, char* args[]) {
 	//gameplay variables
 	const int airCapacity = 100;
-	float airRemaining = 86;
+	float airRemaining = 14;
 	
 	const int powerCapacity = 100;
 	float powerRemaining = 43;
 
 	const int healthCapacity = 100;
 	float healthRemaining = 60;
+
+	float blackSlider = 0;
+	float phaseAccumulator = 0;
 
 	//variables for padding around screen for camera lag
 	const int viewportPad = 40;
@@ -1761,7 +1778,32 @@ int main(int argc, char* args[]) {
 		if (redSlider < 0) {
 			redSlider = 0;
 		}
-		renderRedFilter(redSlider);
+
+		airRemaining -= frameDelta / 1000;
+		if (playerY < -841) {
+			airRemaining += frameDelta / 50;
+			if (airRemaining > airCapacity) {
+				airRemaining = airCapacity;
+			}
+		}
+		if (airRemaining < 0) {
+			airRemaining = 0;
+		}
+		powerRemaining -= frameDelta / 3000;
+		powerRemaining -= (frameDelta / 500) * (pushingVert || pushingSide);
+
+		if (airRemaining < breathConstant) {
+			//new idea, have max brightness value, and small deviations that speed up.
+			phaseAccumulator += (breathFrequency)*frameDelta*(1/2000.0);
+			blackSlider = 255 * (breathConstant - airRemaining)/breathConstant;
+			blackSlider += (2*airRemaining + 8)*sin(phaseAccumulator);
+			printf("phaseAcc, airRemaining, blackSlider: %f, %f, %f\n",phaseAccumulator, airRemaining, blackSlider);
+		}
+		else {
+			phaseAccumulator = PI/2;
+			blackSlider = 0;
+		}
+		renderFilters(redSlider, blackSlider);
 
 
 		//render viewport to screen 
