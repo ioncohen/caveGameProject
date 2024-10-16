@@ -23,6 +23,8 @@ struct hashPair
 
 #define PI 3.14159265
 
+const float WATER_DRAG_FACTOR = 0.005;
+
 const float toRad = 0.01745329251;
 const float toDeg = 57.2957795131;
 
@@ -52,7 +54,8 @@ const int GAME_HEIGHT = 100;
 
 const int MAX_DIM = GAME_WIDTH - (GAME_WIDTH - GAME_HEIGHT) * (GAME_HEIGHT > GAME_WIDTH);
 
-const float ACCEL_RATE = 0.0005;
+const float ACCEL_RATE = 0.0007;
+const float GRAVITY_FORCE = 0.001;
 
 //The window we'll be rendering to
 SDL_Window* window = NULL;
@@ -162,7 +165,6 @@ bool caveNoise(float x, float y) {
 	float explosionMod = 0;
 	if (explosions.find(std::pair<int,int>(floor(x / expGrain), floor(y/ expGrain))) != explosions.end()) {
 		explosionMod = 1;
-		printf("explosion detected here!!!!");
 	}
 	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(y , x) + explosionMod > noiseCutoffLevel;
 }
@@ -1210,6 +1212,8 @@ int main(int argc, char* args[]) {
 	bool explode = false;
 	bool explodePrev = false;
 
+	bool glueToSurface = false;
+
 	const int fpsWindowSize = 100;
 
 	uint32_t prevTicks = -1000;
@@ -1317,7 +1321,7 @@ int main(int argc, char* args[]) {
 			}
 		}
 
-		
+		//TODO: redo the whole movement system. Use forces instead of just forcing the accelrate.
 
 
 		//now adjust movement speed
@@ -1356,6 +1360,11 @@ int main(int argc, char* args[]) {
 				yAccel = -ACCEL_RATE;
 			}
 		}
+		xAccel = pushingSide ? xAccel : 0;
+		yAccel = pushingVert ? yAccel : 0;
+
+		//reduce accel rate by a factor proportional to speed^2
+
 
 		lastNFrames[frameCount % fpsWindowSize] = SDL_GetTicks();
 		int avgFPS = fpsWindowSize/(lastNFrames[frameCount % fpsWindowSize] - lastNFrames[(frameCount + 1)%fpsWindowSize]);
@@ -1372,16 +1381,44 @@ int main(int argc, char* args[]) {
 		float portion = 0;
 		float waterHeight = (1 + SimplexNoise::noise((SCREEN_WIDTH/2 + (playerX * pixelSize + viewportRect.x)) / 100.0, SDL_GetTicks() / 1200.0))/1.5 - 1;
 
+		//when surfacing, yaccel is accelrate. or 0.
+
+		if (playerY < -839 - waterHeight) {
+			glueToSurface = !pushingUp;
+		}
+		if (playerY < -841 - waterHeight) {
+			yAccel = 0;
+			xAccel = 0;
+		}
+
+		if (glueToSurface) {
+			//deep rebound
+			if (playerY > -841 - waterHeight) {
+				yAccel = -0.0003;
+			} else {
+				//glued to surface, and not deep, so do portion control.
+				portion = (844 + waterHeight + playerY) / 6;
+				portion = portion < 0 ? 0 : portion;
+				if (playerY < -841 - waterHeight) {
+					yAccel = 0;
+				}
+				//buoyant force:
+				yAccel -= portion / 500;
+				yAccel += GRAVITY_FORCE;
+			}
+		} else if (playerY < -841 - waterHeight) {
+			yAccel += GRAVITY_FORCE;
+		}
+
+		/*
 		if (playerY < -839 - waterHeight) {
 			//in the air
-			if (ySpeed < -0.3) {
-				ySpeed = -0.3;
-			}
 			//portion !!underwater!!: how far below 844 we are
 			portion = (844 + waterHeight + playerY) / 6;
 			if (portion < 0) {
 				portion = 0;
 			}
+			//think in terms of force?
 			yAccel = 0.001 - portion / 500;
 			//frameDelta This
 			if (playerY > -844 - waterHeight) {
@@ -1400,17 +1437,18 @@ int main(int argc, char* args[]) {
 			yAccel = 0;
 			xAccel = 0;
 		}
+		*/
+
+
+
+		//TODO: use square function AND linear function, slow down whichever is most? actually, idk.
+		if (prevY > -844 - waterHeight) {
+			xAccel -=  xSpeed * WATER_DRAG_FACTOR;
+			yAccel -=  ySpeed * WATER_DRAG_FACTOR;
+		}
 
 		xSpeed += xAccel * frameDelta;
 		ySpeed += yAccel * frameDelta;
-
-		//TODO: figure out a way to frameDelta this
-		if (prevY > -841 - waterHeight  && xAccel == 0) {
-			xSpeed *= 1 - frameDelta / 200;
-		}
-		if (prevY > -841 - waterHeight && yAccel == 0) {
-			ySpeed *= 1 - frameDelta / 200;
-		}
 
 		prevX = floor(playerX);
 		prevY = floor(playerY);
@@ -1578,7 +1616,6 @@ int main(int argc, char* args[]) {
 						//todo: optimise to not redo find twice (in cave noise and out)
 						if (!caveNoise(i, j) && explosions.find(std::pair<int, int>(floor(i / expGrain), floor(j / expGrain))) == explosions.end()) {
 							explosions[std::pair<int, int>(floor(i / expGrain), floor(j / expGrain))] = 1;
-							printf("added new block!");
 						}
 					}
 				}
@@ -1780,7 +1817,7 @@ int main(int argc, char* args[]) {
 		}
 
 		airRemaining -= frameDelta / 1000;
-		if (playerY < -841) {
+		if (playerY < -839) {
 			airRemaining += frameDelta / 50;
 			if (airRemaining > airCapacity) {
 				airRemaining = airCapacity;
@@ -1792,12 +1829,12 @@ int main(int argc, char* args[]) {
 		powerRemaining -= frameDelta / 3000;
 		powerRemaining -= (frameDelta / 500) * (pushingVert || pushingSide);
 
-		if (airRemaining < breathConstant) {
+		if (airRemaining < breathConstant || abs(sin(phaseAccumulator)) > 0.01) {
 			//new idea, have max brightness value, and small deviations that speed up.
 			phaseAccumulator += (breathFrequency)*frameDelta*(1/2000.0);
 			blackSlider = 255 * (breathConstant - airRemaining)/breathConstant;
 			blackSlider += (2*airRemaining + 8)*sin(phaseAccumulator);
-			printf("phaseAcc, airRemaining, blackSlider: %f, %f, %f\n",phaseAccumulator, airRemaining, blackSlider);
+			//printf("phaseAcc, airRemaining, blackSlider: %f, %f, %f\n",phaseAccumulator, airRemaining, blackSlider);
 		}
 		else {
 			phaseAccumulator = PI/2;
@@ -1984,7 +2021,7 @@ int main(int argc, char* args[]) {
 		//quit = 1;
 
 		airRemaining -= frameDelta/1000;
-		if (playerY < -841) {
+		if (playerY < -839) {
 			airRemaining += frameDelta / 100;
 			if (airRemaining > airCapacity) {
 				airRemaining = airCapacity;
