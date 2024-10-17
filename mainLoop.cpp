@@ -1070,16 +1070,18 @@ void renderTurbulentWater(SDL_Vertex gradientCorner, SDL_Rect *viewportRect) {
 	SDL_Rect waterRect = { 0,gradientCorner.position.y, pixelSize, 0 };
 	for (int i = 0; i < SCREEN_WIDTH; i += pixelSize) {
 		float waterHeight = 5*(1+SimplexNoise::noise((i+(playerX*pixelSize + viewportRect->x)) / 100.0, SDL_GetTicks() / 1200.0));
+		//draw most of the water
 		waterRect.x = i;
 		waterRect.y -= floor(waterHeight);
 		waterRect.h = floor(waterHeight);
 		SDL_RenderFillRect(renderer, &waterRect);
-		SDL_SetRenderDrawColor(renderer, 80, 80, 80, 80);
+		//draw the top lighter layer of water?
+		SDL_SetRenderDrawColor(renderer, 60, 60, 60, 60);
 		waterRect.y -= 2;
 		waterRect.h = 2;
 		SDL_RenderFillRect(renderer, &waterRect);
+		//reset for next lower section
 		SDL_SetRenderDrawColor(renderer, 50, 50, 50, 50);
-
 
 		waterRect.y = gradientCorner.position.y;
 	}
@@ -1128,13 +1130,16 @@ void renderSunGradient(SDL_Rect* viewportRect, SDL_BlendMode bmode) {
 }
 
 void renderFilters(float redSlider, float blackSlider) {
-	if (redSlider > 0 || blackSlider > 0) {
+	if (redSlider > 0) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		//draw red filter
 		SDL_SetRenderDrawColor(renderer, 255, 0, 0, (int)redSlider);
 		SDL_RenderFillRect(renderer, NULL);
-
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+	}
+	if (blackSlider > 0) {
 		//draw black filter
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		if (blackSlider > 255) {
 			blackSlider = 255;
 		}
