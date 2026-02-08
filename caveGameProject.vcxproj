@@ -19,11 +19,13 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="InputHandler.cpp" />
     <ClCompile Include="mainLoop.cpp" />
     <ClCompile Include="SimplexNoise.cpp" />
     <ClCompile Include="testingFile.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="InputHandler.h" />
     <ClInclude Include="SimplexNoise.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

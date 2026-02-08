@@ -7,7 +7,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
-
+#include "InputHandler.h"
 
 struct hashPair
 {
@@ -116,8 +116,8 @@ float ySpeed = 0;
 float xAccel = 0;
 float yAccel = 0;
 
-float noiseScaleFactor = 50;
-float noiseCutoffLevel = 0;
+const float noiseScaleFactor = 50;
+const float noiseCutoffLevel = 0;
 
 
 int bufferOffsetX = 0;
@@ -141,7 +141,7 @@ struct bubble {
 };
 
 //idea: width gets smaller before it gets larger, so theres small paths down into the caves instead of patches.
-float getCaveWidth(float y, float x) {
+/*float getCaveWidth(float y, float x) {
 	if (y < -400 + 20*SimplexNoise::noise(x/50.0)) { return 1; }
 	float caveWidth = pow(1.0000000001, (-y*y*y*y)) - 0.4;
 	
@@ -150,13 +150,24 @@ float getCaveWidth(float y, float x) {
 	//	caveWidth += 3 * (caveWidth - 0.5);
 	//}
 	return caveWidth;
+}*/
+
+//TODO: find a way such that it goes to 0 (or -1?) near - 400. otherwise get a lot of floating bits 
+float getCaveWidth(float x, float y) {
+	if (y < -400 + 20 * SimplexNoise::noise(x / 50.0)) { return 1; }
+	return SimplexNoise::noise(x / (100 * noiseScaleFactor), y / (100 * noiseScaleFactor)) - 0.1;
 }
+
 
 //basically limits map size to 2 billion. is that ok? probably.
 std::unordered_map<std::pair<int,int>, short, hashPair> explosions;
 const int expGrain = 1;
 const int expSize = 8;
 
+float highFreqNoise(float x, float y) {
+	if (y < -400) { return 1; }
+	return (0.5 + SimplexNoise::noise(1600 + y/(10*noiseScaleFactor),-3214 + x/(10*noiseScaleFactor)))*(0.05* SimplexNoise::noise(10 * x / noiseScaleFactor, 10 * y / noiseScaleFactor));
+}
 
 //returns 1 if open water, 0 if cave?
 bool caveNoise(float x, float y) {
@@ -166,7 +177,7 @@ bool caveNoise(float x, float y) {
 	if (explosions.find(std::pair<int,int>(floor(x / expGrain), floor(y/ expGrain))) != explosions.end()) {
 		explosionMod = 1;
 	}
-	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(y , x) + explosionMod > noiseCutoffLevel;
+	return SimplexNoise::noise(x / noiseScaleFactor, y / noiseScaleFactor) + getCaveWidth(x, y) + explosionMod + highFreqNoise(x,y) > noiseCutoffLevel;
 }
 
 //mod method that loops around for negative numbers
@@ -1151,9 +1162,12 @@ void renderFilters(float redSlider, float blackSlider) {
 }
 
 int main(int argc, char* args[]) {
+
+	InputHandler inputHandler;
+
 	//gameplay variables
 	const int airCapacity = 100;
-	float airRemaining = 14;
+	float airRemaining = 50;
 	
 	const int powerCapacity = 100;
 	float powerRemaining = 43;
@@ -1257,8 +1271,13 @@ int main(int argc, char* args[]) {
 		else {
 			tickChange = 0;
 		}
+
+		inputHandler.pollInputs(3);
+		inputHandler.printState();
+
+		quit = inputHandler.getState().pressingQuit;
 		//first thing we do in the loop is handle inputs
-		while (SDL_PollEvent(&event) != 0) {
+		while (false && SDL_PollEvent(&event) != 0) {
 			//ok so what events are we thinking of? x out, move mouse, shift and ctrl for height
 			if (event.type == SDL_QUIT) {
 				quit = true;
