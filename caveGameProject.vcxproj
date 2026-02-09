@@ -21,11 +21,16 @@
   <ItemGroup>
     <ClCompile Include="InputHandler.cpp" />
     <ClCompile Include="mainLoop.cpp" />
+    <ClCompile Include="GamePhysics.cpp" />
+    <ClCompile Include="PlayerCharacter.cpp" />
     <ClCompile Include="SimplexNoise.cpp" />
     <ClCompile Include="testingFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="InputHandler.h" />
+    <ClInclude Include="GamePhysics.h" />
+    <ClInclude Include="PhysicsBody.h" />
+    <ClInclude Include="PlayerCharacter.h" />
     <ClInclude Include="SimplexNoise.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

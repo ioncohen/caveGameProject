@@ -8,6 +8,9 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 #include "InputHandler.h"
+#include "PlayerCharacter.h"
+#include "GamePhysics.h"
+#include <iostream>
 
 struct hashPair
 {
@@ -1164,6 +1167,8 @@ void renderFilters(float redSlider, float blackSlider) {
 int main(int argc, char* args[]) {
 
 	InputHandler inputHandler;
+	PlayerCharacter playerCharacter(0,0,0,0,2,2,10000,0.6,100,100);
+	GamePhysics gamePhysics;
 
 	//gameplay variables
 	const int airCapacity = 100;
@@ -1273,10 +1278,16 @@ int main(int argc, char* args[]) {
 		}
 
 		inputHandler.pollInputs(3);
-		inputHandler.printState();
+		//inputHandler.printState();
 
+		//temporary integration for testing
 		quit = inputHandler.getState().pressingQuit;
+		debugFlag = inputHandler.getState().pressingDebug;
+		bool pushingSide = inputHandler.getState().pressingRight || inputHandler.getState().pressingLeft;
+		bool pushingVert = inputHandler.getState().pressingUp || inputHandler.getState().pressingDown;
+		bool explode = inputHandler.getState().pressingQ;
 		//first thing we do in the loop is handle inputs
+		/*
 		while (false && SDL_PollEvent(&event) != 0) {
 			//ok so what events are we thinking of? x out, move mouse, shift and ctrl for height
 			if (event.type == SDL_QUIT) {
@@ -1344,11 +1355,10 @@ int main(int argc, char* args[]) {
 				}
 			}
 		}
-
+		*/
 		//TODO: redo the whole movement system. Use forces instead of just forcing the accelrate.
-
-
 		//now adjust movement speed
+		/*
 		bool pushingSide = pushingLeft || pushingRight;
 		bool pushingVert = pushingUp || pushingDown;
 
@@ -1386,7 +1396,7 @@ int main(int argc, char* args[]) {
 		}
 		xAccel = pushingSide ? xAccel : 0;
 		yAccel = pushingVert ? yAccel : 0;
-
+		*/
 		//reduce accel rate by a factor proportional to speed^2
 
 
@@ -1479,6 +1489,20 @@ int main(int argc, char* args[]) {
 
 		playerX += xSpeed * frameDelta;
 		playerY += ySpeed * frameDelta;
+
+		//temporary integration for testing
+		gamePhysics.updatePlayerPosition(playerCharacter, inputHandler.getState(), 0, frameDelta);
+		playerX = playerCharacter.getPhysicsBody().x;
+		playerY = playerCharacter.getPhysicsBody().y;
+
+		std::cout << "Pos: [" << playerX << ", " << playerY << "]" << std::endl;
+
+
+		xSpeed = playerCharacter.getPhysicsBody().xVel;
+		ySpeed = playerCharacter.getPhysicsBody().yVel;
+
+		prevX = playerCharacter.getPhysicsBody().prevX;
+		prevY = playerCharacter.getPhysicsBody().prevY;
 
 		int collisionCheck = 0;
 
