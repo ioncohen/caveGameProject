@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="GameWorldOracle.cpp" />
     <ClCompile Include="InputHandler.cpp" />
     <ClCompile Include="mainLoop.cpp" />
     <ClCompile Include="GamePhysics.cpp" />
@@ -27,6 +28,7 @@
     <ClCompile Include="testingFile.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="GameWorldOracle.h" />
     <ClInclude Include="InputHandler.h" />
     <ClInclude Include="GamePhysics.h" />
     <ClInclude Include="PhysicsBody.h" />
